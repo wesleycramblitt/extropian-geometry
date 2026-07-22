@@ -90,4 +90,38 @@ struct GridGeometry
     float lineWidth = 0.01f;
 };
 
+// ── 2D primitive mesh generators ──
+// All meshes are generated on the XY plane (Z=0), centered at origin
+// unless otherwise noted.
+
+/// Plain (sharp-cornered) rectangle.
+MeshData generate_rect_mesh(const RectangleGeometry& geom);
+
+/// Rounded rectangle with per-corner radii.
+MeshData generate_rounded_rect_mesh(const RoundedRectangleGeometry& geom);
+
+/// Circle centered at origin.
+MeshData generate_circle_mesh(const CircleGeometry& geom);
+
+/// Ellipse centered at origin.
+MeshData generate_ellipse_mesh(const EllipseGeometry& geom);
+
+/// Circular arc (open).
+MeshData generate_arc_mesh(const ArcGeometry& geom);
+
+/// Ring / annulus (outer circle with inner hole).
+MeshData generate_ring_mesh(const RingGeometry& geom);
+
+/// Thick line segment between two points.
+MeshData generate_line_mesh(const LineGeometry& geom);
+
+/// Thick polyline (connected line segments).
+MeshData generate_polyline_mesh(const PolylineGeometry& geom);
+
+/// 2D arrow (shaft + head).
+MeshData generate_arrow_mesh(const ArrowGeometry& geom);
+
+/// Grid of horizontal and vertical lines.
+MeshData generate_grid_mesh(const GridGeometry& geom);
+
 } // namespace exd::geometry

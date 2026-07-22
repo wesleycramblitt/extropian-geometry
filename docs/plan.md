@@ -1,14 +1,14 @@
 # Extropian Geometry — Project Plan
 
-> This library should live in its own repository: `extropian-geometry`.
+> Renderer-independent mesh generation and geometric computation library.
 >
-> It is extracted from Canvas to provide a reusable, renderer-independent mesh generation and geometric computation library.
+> Depends only on `extropian-core` for math types (`Vec3f`, `Quat`).
 
 ---
 
 ## 1. Purpose
 
-Geometry is a **pure computational library**. It generates `exd::geom::MeshData` from structured descriptors. It has no GPU dependency, no ECS dependency, and no renderer dependency. It depends only on `extropian-core` for math and data types.
+Geometry is a **pure computational library**. It generates `exd::geometry::MeshData` from structured descriptors. It has no GPU dependency, no ECS dependency, and no renderer dependency.
 
 Geometry answers:
 
@@ -17,20 +17,35 @@ Geometry answers:
 Geometry does NOT answer:
 
 - How to display the mesh (renderer's job)
-- How to compose the mesh into a document (canvas's job)
-- What the mesh means semantically (composer's job)
+- How to compose the mesh into a UI component (extropian-ui's job)
+- How to lay out UI elements (application's job)
+- What the mesh means semantically
 
 ---
 
 ## 2. Position in the Architecture
 
 ```
-composer ──→ canvas ──→ renderer ──→ app ──→ core
-                 │
-                 └──→ geometry ──→ core
+Higher-Level App (canvas / game engine)
+│
+├── extropian-ui ──────────┐
+│   UI component meshes    │
+│   (Button, Panel, etc.)  │
+│                          │
+└── extropian-geometry ◄───┘  (THIS REPO)
+    │  MeshData, Vertex, Bounds types
+    │  2D/3D primitive generators
+    │  Path2D tessellation
+    │  Text shaping + glyph mesh gen
+    │  Mesh operations (merge, transform)
+    │
+    └── extropian-core
+        Vec3f, Quat, math utilities
 ```
 
-Geometry is a leaf dependency. Canvas depends on it. Renderer does NOT depend on it (renderer only needs `exd::geom` data types from core, not the generation functions). Other projects can use geometry directly without pulling in canvas or renderer.
+Geometry is a **leaf dependency**. `extropian-ui` depends on it. Other projects (renderers, tools, exporters) can use geometry directly without pulling in ui or a windowing system.
+
+**Key change from earlier drafts:** UI components (`button.hpp`, `slider.hpp`, `panel.hpp`) have been moved OUT of geometry into the separate `extropian-ui` repository. Geometry provides only the building blocks — not the composed UI elements.
 
 ---
 
@@ -42,7 +57,7 @@ Geometry is a leaf dependency. Canvas depends on it. Renderer does NOT depend on
 - **No ECS.** No registry, no components, no systems.
 - **Deterministic.** Same descriptor → same mesh every time.
 - **Configurable quality.** Segment counts, tessellation tolerances.
-- **Independent of canvas/renderer.** Only core dependency.
+- **Depends only on core.**
 
 ---
 
@@ -50,32 +65,49 @@ Geometry is a leaf dependency. Canvas depends on it. Renderer does NOT depend on
 
 ```
 extropian-geometry/
-├── CMakeLists.txt
+├── cmakelists.txt
 ├── docs/
 │   └── plan.md
 ├── include/
 │   └── exd/geometry/
 │       ├── geometry.hpp          # umbrella header
+│       ├── types.hpp             # Vertex, MeshData, Bounds, enums
 │       ├── mesh_builder.hpp      # MeshBuilder (incremental indexed construction)
-│       ├── primitives2d.hpp      # 2D mesh generators
-│       ├── primitives3d.hpp      # 3D mesh generators
+│       ├── mesh_ops.hpp          # merge_meshes, transform_mesh, compute_bounds
+│       ├── primitives2d.hpp      # 2D descriptor structs + generator decls
+│       ├── primitives3d.hpp      # 3D descriptor structs + generator decls
 │       ├── path.hpp              # Path2D, tessellation (fill + stroke)
-│       ├── path_types.hpp        # PathCommand, StrokeStyle, FillRule, LineJoin, LineCap
-│       ├── text.hpp              # Text shaping abstraction, glyph mesh generation
-│       ├── text_types.hpp        # FontId, TextStyle, GlyphPlacement, ShapedText
-│       └── ui/                   # higher-level UI primitives
-│           ├── button.hpp
-│           ├── slider.hpp
-│           ├── panel.hpp
-│           └── ...
+│       ├── text.hpp              # Text shaping, glyph mesh generation
+│       └── font.hpp              # FontAtlas, GlyphCache
 ├── src/
 │   ├── mesh_builder.cpp
-│   ├── primitives2d.cpp
-│   ├── primitives3d.cpp
-│   ├── path.cpp
-│   ├── text.cpp
-│   └── ui/
-│       └── ...
+│   ├── mesh_ops.cpp
+│   ├── primitives2d/
+│   │   ├── rounded_rect.cpp
+│   │   ├── circle.cpp
+│   │   ├── line.cpp
+│   │   ├── arc.cpp
+│   │   ├── ring.cpp
+│   │   ├── polyline.cpp
+│   │   ├── arrow.cpp
+│   │   └── grid.cpp
+│   ├── primitives3d/
+│   │   ├── sphere.cpp
+│   │   ├── box.cpp
+│   │   ├── cylinder.cpp
+│   │   ├── plane.cpp
+│   │   ├── capsule.cpp
+│   │   ├── icosahedron.cpp
+│   │   ├── torus.cpp
+│   │   ├── cone.cpp
+│   │   ├── tube.cpp
+│   │   └── disk.cpp
+│   ├── path/
+│   │   └── path.cpp
+│   └── text/
+│       ├── text.cpp              # shaping (HarfBuzz)
+│       ├── font.cpp              # font loading (FreeType)
+│       └── glyph_mesh.cpp        # glyph → mesh generation
 └── tests/
     ├── unit/
     ├── snapshot/
@@ -86,33 +118,121 @@ extropian-geometry/
 
 ## 5. Modules
 
-### 5.1 mesh_builder
+### 5.1 Types (`types.hpp`)
 
-Incremental indexed mesh construction. Used internally by generators and available to users.
+Core data types shared across the ecosystem.
+
+```cpp
+struct Vertex {
+    math::Vec3f position;
+    math::Vec3f normal;
+    math::Vec3f uv;
+    math::Quat  tangent;
+    math::Quat  color;      // RGBA packed in quaternion
+};
+
+enum class PrimitiveTopology { Points, Lines, LineStrip, Triangles, TriangleStrip };
+
+struct Bounds { math::Vec3f min; math::Vec3f max; };
+
+struct MeshData {
+    std::vector<Vertex>    vertices;
+    std::vector<uint32_t>  indices;
+    PrimitiveTopology      topology;
+    Bounds                 bounds;  // computed automatically or set by caller
+};
+```
+
+---
+
+### 5.2 MeshBuilder (`mesh_builder.hpp`)
+
+Incremental indexed mesh construction. Used internally by generators and available to callers.
 
 ```cpp
 class MeshBuilder {
 public:
-    uint32_t add_vertex(const Vertex& v);      // returns auto-assigned index
+    void reserve(size_t vertexCount, size_t indexCount);
+
+    uint32_t add_vertex(const Vertex& v);
     void add_triangle(uint32_t a, uint32_t b, uint32_t c);
     void add_quad(uint32_t a, uint32_t b, uint32_t c, uint32_t d);
     void add_line(uint32_t a, uint32_t b);
 
-    MeshData build(PrimitiveTopology topology = Triangles) const;
-    void reset();
+    MeshData build(PrimitiveTopology topology = PrimitiveTopology::Triangles) &&;
+    void clear();
+
     size_t vertex_count() const;
     size_t index_count() const;
 };
 ```
 
-### 5.2 primitives3d
+---
 
-Free functions that generate meshes from geometry descriptors.
+### 5.3 MeshOps (`mesh_ops.hpp`) — NEW, HIGH PRIORITY
+
+Utility functions for mesh composition. Needed by `extropian-ui` to combine sub-component meshes.
 
 ```cpp
+// Combine multiple meshes into one. Appends vertices/indices with offset adjustment.
+MeshData merge_meshes(std::span<const MeshData> meshes);
+
+// Apply a 4x4 transform matrix to all vertex positions (and optionally normals).
+MeshData transform_mesh(const MeshData& mesh, const math::Mat4f& transform,
+                        bool transformNormals = true);
+
+// Compute bounds from vertex positions.
+Bounds compute_bounds(std::span<const Vertex> vertices);
+```
+
+---
+
+### 5.4 2D Primitives (`primitives2d.hpp`)
+
+Free functions generating 2D meshes on the XY plane (Z=0). These are the building blocks for all UI components.
+
+```cpp
+MeshData generate_rounded_rect_mesh(const RoundedRectangleGeometry& desc);
+MeshData generate_circle_mesh(const CircleGeometry& desc);
+MeshData generate_line_mesh(const LineGeometry& desc);
+MeshData generate_arc_mesh(const ArcGeometry& desc);
+MeshData generate_ring_mesh(const RingGeometry& desc);
+MeshData generate_polyline_mesh(const PolylineGeometry& desc);
+MeshData generate_arrow_mesh(const Arrow2DGeometry& desc);
+MeshData generate_grid_mesh(const Grid2DGeometry& desc);
+```
+
+Example descriptors:
+
+```cpp
+struct RoundedRectangleGeometry {
+    math::Vec3f size = {1.0f, 1.0f, 0.0f};
+    CornerRadii corners;         // per-corner radii
+    uint32_t    cornerSegments = 8;
+};
+
+struct CircleGeometry {
+    float    radius = 0.5f;
+    uint32_t segments = 32;
+};
+
+struct LineGeometry {
+    math::Vec3f start = {0.0f, 0.0f, 0.0f};
+    math::Vec3f end   = {1.0f, 0.0f, 0.0f};
+    float       width = 0.02f;
+};
+```
+
+**Implementation status:** Stubs exist. All generators currently return empty `MeshData{}`. This is the highest-priority gap — `extropian-ui` cannot implement anything real until these are done.
+
+---
+
+### 5.5 3D Primitives (`primitives3d.hpp`)
+
+```cpp
+MeshData generate_sphere_mesh(const SphereGeometry& desc);
 MeshData generate_box_mesh(const BoxGeometry& desc);
 MeshData generate_plane_mesh(const PlaneGeometry& desc);
-MeshData generate_sphere_mesh(const SphereGeometry& desc);
 MeshData generate_icosahedron_mesh(const IcosahedronGeometry& desc);
 MeshData generate_ellipsoid_mesh(const EllipsoidGeometry& desc);
 MeshData generate_cylinder_mesh(const CylinderGeometry& desc);
@@ -121,51 +241,26 @@ MeshData generate_capsule_mesh(const CapsuleGeometry& desc);
 MeshData generate_torus_mesh(const TorusGeometry& desc);
 MeshData generate_tube_mesh(const TubeGeometry& desc);
 MeshData generate_disk_mesh(const DiskGeometry& desc);
-MeshData generate_arrow_mesh(const ArrowGeometry& desc);
+MeshData generate_arrow_mesh(const Arrow3DGeometry& desc);
 MeshData generate_axes_mesh(const AxesGeometry& desc);
 MeshData generate_billboard_mesh(const BillboardGeometry& desc);
 ```
 
-Example descriptor:
+**Implementation status:** Sphere and Box are fully implemented. Cylinder, Plane, Capsule, Icosahedron are stubs. Remaining are not yet started.
 
-```cpp
-struct SphereGeometry {
-    float       radius = 0.5f;
-    uint32_t    latitude_segments = 16;
-    uint32_t    longitude_segments = 32;
-    bool        generate_normals = true;
-    bool        generate_texcoords = true;
-};
-```
+---
 
-### 5.3 primitives2d
+### 5.6 Path2D (`path.hpp`)
 
-```cpp
-MeshData generate_rect_mesh(const RectGeometry& desc);
-MeshData generate_rounded_rect_mesh(const RoundedRectGeometry& desc);
-MeshData generate_circle_mesh(const CircleGeometry& desc);
-MeshData generate_ellipse_mesh(const EllipseGeometry& desc);
-MeshData generate_arc_mesh(const ArcGeometry& desc);
-MeshData generate_ring_mesh(const RingGeometry& desc);
-MeshData generate_line_mesh(const LineGeometry& desc);
-MeshData generate_polyline_mesh(const PolylineGeometry& desc);
-MeshData generate_arrow_mesh(const Arrow2DGeometry& desc);
-MeshData generate_grid_mesh(const Grid2DGeometry& desc);
-```
-
-These produce 3D meshes on the XY or XZ plane, ready for GPU upload. No separate 2D-only mesh type.
-
-### 5.4 path
-
-SVG-like vector path construction and tessellation.
+SVG-like vector path construction and tessellation. Enables complex shapes (hearts, stars, custom icons, text outlines).
 
 ```cpp
 class Path2D {
 public:
-    Path2D& move_to(Vec2f p);
-    Path2D& line_to(Vec2f p);
-    Path2D& quadratic_to(Vec2f control, Vec2f end);
-    Path2D& cubic_to(Vec2f c0, Vec2f c1, Vec2f end);
+    Path2D& move_to(math::Vec2f p);
+    Path2D& line_to(math::Vec2f p);
+    Path2D& quadratic_to(math::Vec2f control, math::Vec2f end);
+    Path2D& cubic_to(math::Vec2f c0, math::Vec2f c1, math::Vec2f end);
     Path2D& arc_to(const ArcDescriptor& arc);
     Path2D& close();
 
@@ -173,85 +268,131 @@ public:
                              float tolerance = 0.25f) const;
     MeshData tessellate_stroke(const StrokeStyle& style,
                                float tolerance = 0.25f) const;
+
+    uint32_t revision() const;  // increments on mutation, for caching
 };
 ```
 
-Compilation: path commands → curve flattening → fill tessellation → `MeshData`.
+Pipeline: path commands → curve flattening → triangulation → `MeshData`.
 
-Stroke tessellation also handles joins, caps, and dash patterns.
+Stroke tessellation handles line joins, caps, and dash patterns.
 
-### 5.5 text
+**Implementation status:** Path command recording and revision tracking are implemented. `tessellateFill()` and `tessellateStroke()` return empty meshes (stubs).
+
+---
+
+### 5.7 Text (`text.hpp`, `font.hpp`)
 
 Text shaping abstraction and glyph mesh generation.
 
 ```cpp
+// ── Types ──
+
+using FontId = uint64_t;
+using GlyphId = uint32_t;
+
+enum class FontWeight { Thin = 100, /* ... */ Black = 900 };
+enum class TextAlignment { Left, Center, Right };
+
+struct TextStyle {
+    FontId       font;
+    float        size = 16.0f;
+    FontWeight   weight = FontWeight::Normal;
+    TextAlignment alignment = TextAlignment::Left;
+};
+
+struct GlyphPlacement {
+    GlyphId      glyphId;
+    math::Vec2f  position;     // baseline origin
+    math::Vec2f  size;         // quad dimensions
+    math::Vec2f  uvOffset;     // atlas UV offset
+    math::Vec2f  uvSize;       // atlas UV size
+    float        advance;      // horizontal advance for next glyph
+};
+
 struct ShapedText {
     std::vector<GlyphPlacement> glyphs;
-    Vec2f size;
-    Bounds2D bounds;
+    math::Vec2f  boundsSize;
 };
+
+// ── Font Loading ──
+
+class FontAtlas {
+public:
+    // Load a font file, return a FontId for use in TextStyle
+    FontId load_font(const std::string& path, int faceIndex = 0);
+    // Access atlas texture data for GPU upload
+    std::span<const uint8_t> atlas_data() const;
+    math::Vec2f atlas_size() const;
+};
+
+// ── Text Shaping ──
 
 class TextShaper {
 public:
     virtual ~TextShaper() = default;
+
+    // Shape text with given style, return glyph placements
     virtual ShapedText shape(std::string_view text,
-                              const TextStyle& style,
-                              float max_width = 0.0f) const = 0;
+                             const TextStyle& style,
+                             float maxWidth = 0.0f) const = 0;
 };
 
-// Glyph to mesh (for SDF or bitmap atlases)
-MeshData generate_glyph_quad_mesh(const GlyphPlacement& glyph,
-                                   float atlas_width, float atlas_height);
-MeshData generate_text_mesh(const std::vector<GlyphPlacement>& glyphs,
-                             float atlas_width, float atlas_height);
+// ── Glyph Mesh Generation ──
+
+// Generate a quad mesh for a single glyph (positioned, UV-mapped)
+MeshData generate_glyph_mesh(const GlyphPlacement& glyph,
+                             const FontAtlas& atlas);
+
+// Generate a mesh for an entire shaped text run
+MeshData generate_text_mesh(const ShapedText& shaped,
+                            const FontAtlas& atlas);
 ```
 
-Backend adapters (HarfBuzz + FreeType) live behind the `TextShaper` interface.
+Backend: HarfBuzz for shaping, FreeType for glyph metrics/atlas rasterization.
 
-### 5.6 ui (future)
-
-Higher-level composable UI primitives built from 2D geometry:
-
-```
-generate_button_mesh(ButtonDescriptor) → MeshData
-generate_slider_mesh(SliderDescriptor) → MeshData
-generate_panel_mesh(PanelDescriptor)   → MeshData
-```
-
-These are pure geometry generators — no layout, no interaction, no styling. They produce `MeshData` that canvas can compose and style.
+**Implementation status:** Types and enums are defined. No implementation yet — all functions return empty meshes or are not compiled.
 
 ---
 
 ## 6. Dependencies
 
 ```
-geometry → core  (exd::geom types, exd::math)
+extropian-geometry → extropian-core  (math::Vec3f, math::Quat, math::Mat4f)
 
-geometry does NOT depend on:
-  - canvas
-  - renderer
-  - app
-  - composer
-  - OpenGL / Vulkan / any GPU API
+extropian-geometry does NOT depend on:
+  - extropian-ui (ui depends on geometry, not the reverse)
+  - Any GPU API (OpenGL, Vulkan, Metal, DirectX)
+  - Any windowing system
+  - Any ECS framework
+  - Any renderer
 ```
+
+For text support, geometry will gain optional dependencies on:
+- **FreeType** — font file parsing, glyph metrics, atlas rasterization
+- **HarfBuzz** — text shaping (Unicode, kerning, ligatures, bidirectional text)
+
+These should be gated behind a CMake option (`ENABLE_TEXT=ON` by default) so that headless/embedded builds can exclude them.
 
 ---
 
-## 7. What Moves Here From Canvas
+## 7. What extropian-ui Needs From Geometry
 
-| From Canvas | To Geometry |
+`extropian-ui` is the primary consumer of geometry. Here is the dependency map:
+
+| UI Component | Geometry Functions Needed |
 |---|---|
-| `primitives3d.hpp` + `.cpp` (all generators) | `primitives3d.hpp` + `.cpp` |
-| `primitives2d.hpp` + `.cpp` (all generators) | `primitives2d.hpp` + `.cpp` |
-| `path.hpp` + `.cpp` (Path2D, tessellation) | `path.hpp` + `.cpp` |
-| `text.hpp` + `.cpp` (shaping, glyph mesh) | `text.hpp` + `.cpp` |
-| `mesh_builder.hpp` + `.cpp` | `mesh_builder.hpp` + `.cpp` |
-
-| From Renderer | To Geometry |
-|---|---|
-| `primitive_mesh_system.cpp` (mesh generation logic — cube vertices/indices) | `primitives3d.cpp` (generator functions) |
-
-The renderer's `PrimitiveMeshSystem` retains its ECS wiring (read component → call generator → upload via MeshManager). Only the geometry generation itself moves.
+| **Button** | `generate_rounded_rect_mesh()`, `generate_text_mesh()`, `merge_meshes()` |
+| **Panel** | `generate_rounded_rect_mesh()` |
+| **Slider** | `generate_line_mesh()`, `generate_circle_mesh()`, `merge_meshes()` |
+| **Checkbox** | `generate_rounded_rect_mesh()`, `generate_line_mesh()` (checkmark) |
+| **TextLabel** | `generate_text_mesh()`, optionally `generate_rounded_rect_mesh()` |
+| **Graph2D** | `generate_grid_mesh()`, `generate_polyline_mesh()`, `generate_line_mesh()`, `generate_text_mesh()`, `merge_meshes()`, `transform_mesh()` |
+| **Graph3D** | `generate_axes_mesh()`, `generate_grid_mesh()`, 3D surface primitives, `generate_billboard_mesh()` |
+| **ProgressBar** | `generate_rounded_rect_mesh()` (background + fill) |
+| **Scrollbar** | `generate_line_mesh()`, `generate_rounded_rect_mesh()` |
+| **Tooltip** | `generate_rounded_rect_mesh()`, `generate_text_mesh()` |
+| **Shape (Heart/Star/etc.)** | `Path2D::tessellateFill()`, `Path2D::tessellateStroke()` |
 
 ---
 
@@ -267,23 +408,29 @@ The renderer's `PrimitiveMeshSystem` retains its ECS wiring (read component → 
 
 ## 9. Milestones
 
-| M0 | Repository foundation: CMake, core dependency, test framework, CI |
-| M1 | MeshBuilder + 3D primitive generators (sphere, box, cylinder, plane) |
-| M2 | Remaining 3D primitives (capsule, torus, tube, cone, ellipsoid, etc.) |
-| M3 | 2D primitive generators (rect, circle, arc, ring, line, arrow, grid) |
-| M4 | Path2D: commands, Bézier flattening, fill tessellation |
-| M5 | Path2D: stroke tessellation (joins, caps, dashes) |
-| M6 | Text: shaping interface, glyph mesh generation |
-| M7 | UI primitives (button, slider, panel) |
+| Milestone | Status | Description |
+|---|---|---|
+| **M0** | ✅ Done | Repository foundation: CMake, core dependency, test framework |
+| **M1** | 🔶 Partial | MeshBuilder (done) + 3D primitives: Sphere (done), Box (done), stubs for Cylinder, Plane, Capsule, Icosahedron |
+| **M2** | ⬜ Not started | Remaining 3D primitives: Torus, Cone, Tube, Disk, Arrow, Axes, Billboard |
+| **M3** | ⬜ Not started | **MeshOps: `merge_meshes()`, `transform_mesh()`, `compute_bounds()`** — BLOCKER for ui |
+| **M4** | ⬜ Not started | **2D primitives: rounded_rect, circle, line** — BLOCKER for ui Button/Panel/Slider |
+| **M5** | ⬜ Not started | Remaining 2D primitives: arc, ring, polyline, arrow, grid |
+| **M6** | ⬜ Not started | Path2D: Bézier flattening, `tessellateFill()` |
+| **M7** | ⬜ Not started | Path2D: `tessellateStroke()` (joins, caps, dashes) |
+| **M8** | ⬜ Not started | Text: FontAtlas (FreeType), TextShaper interface + HarfBuzz backend |
+| **M9** | ⬜ Not started | Text: glyph mesh generation (`generate_text_mesh()`) |
 
 ---
 
 ## 10. Non-Goals
 
-- Layout algorithms (belongs in canvas)
-- Styling / theming (belongs in canvas)
-- GPU upload (belongs in canvas via MeshCache + renderer's MeshManager)
-- Interaction handling (belongs in canvas)
-- Picking / hit testing (belongs in canvas)
+- Layout algorithms (belongs in higher-level application)
+- UI component composition (belongs in `extropian-ui`)
+- Styling / theming (belongs in renderer)
+- GPU upload (belongs in renderer's MeshCache/MeshManager)
+- Interaction handling / hit testing (belongs in application)
 - Serialization (belongs in consuming libraries)
 - ECS integration (geometry has no ECS dependency)
+- Physics or collision detection
+- Mesh simplification / LOD generation

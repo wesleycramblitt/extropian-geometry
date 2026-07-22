@@ -90,9 +90,10 @@ struct Bounds
 /// Renderer maps this to GPU buffers.
 struct MeshData
 {
-    std::vector<Vertex> vertices;
-    std::vector<uint32_t> indices;
-    PrimitiveTopology topology = PrimitiveTopology::Triangles;
+    std::vector<Vertex>    vertices;
+    std::vector<uint32_t>  indices;
+    PrimitiveTopology      topology = PrimitiveTopology::Triangles;
+    Bounds                 bounds;
 };
 
 } // namespace exd::geometry

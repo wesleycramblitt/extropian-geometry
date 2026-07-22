@@ -4,11 +4,21 @@
 #include <exd/math/vec3.hpp>
 
 #include <cstdint>
+#include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace exd::geometry
 {
+
+// ── Forward declarations ──
+class FontAtlas;
+
+// ── Font / glyph identity ──
+
+using FontId  = uint64_t;
+using GlyphId = uint32_t;
 
 // ── Enums ──
 
@@ -28,11 +38,6 @@ enum class TextAlignment
     Center,
     Right
 };
-
-// ── Font / glyph identity ──
-
-using FontId  = uint64_t;
-using GlyphId = uint32_t;
 
 // ── Text style ──
 
@@ -72,5 +77,38 @@ struct TextVisualDescriptor
     std::string text;
     TextStyle   style;
 };
+
+// ── Text Shaper ──
+
+/// Abstract text shaper. Implementations use HarfBuzz or other shaping engines.
+class TextShaper {
+public:
+    virtual ~TextShaper() = default;
+
+    /// Shape text with the given style. Returns glyph placements with positions
+    /// and sizes. The atlasRect fields in GlyphPlacement will be empty (zero)
+    /// until rasterized via FontAtlas::rasterize_glyph().
+    virtual ShapedText shape(std::string_view text,
+                             const TextStyle& style,
+                             float maxWidth = 0.0f) const = 0;
+};
+
+// ── Shaper factory ──
+
+/// Create a HarfBuzz-backed text shaper.
+/// The shaper holds a reference to the atlas and must not outlive it.
+std::unique_ptr<TextShaper> create_harfbuzz_shaper(const FontAtlas& atlas);
+
+// ── Glyph mesh generation ──
+
+/// Generate a textured quad mesh for a single glyph.
+/// The glyph's atlasRect must be filled in (via FontAtlas::rasterize_glyph) beforehand.
+/// The quad is placed at glyph.position with dimensions glyph.size, UV-mapped to atlasRect.
+MeshData generate_glyph_mesh(const GlyphPlacement& glyph);
+
+/// Generate a combined mesh for all glyphs in a shaped text run.
+/// Calls rasterize_glyph on atlas for any glyphs that haven't been rasterized yet.
+/// The output mesh contains one quad per glyph, positioned and UV-mapped.
+MeshData generate_text_mesh(const ShapedText& shaped, FontAtlas& atlas);
 
 } // namespace exd::geometry

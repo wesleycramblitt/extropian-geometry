@@ -5,6 +5,7 @@
 
 // ── Construction ──
 #include <exd/geometry/mesh_builder.hpp>
+#include <exd/geometry/mesh_ops.hpp>
 
 // ── Generators ──
 #include <exd/geometry/primitives2d.hpp>
@@ -15,3 +16,7 @@
 
 // ── Text ──
 #include <exd/geometry/text.hpp>
+#include <exd/geometry/font.hpp>
+
+// ── SDF Blending ──
+#include <exd/geometry/blend.hpp>

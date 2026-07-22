@@ -1,5 +1,11 @@
 build/
+_deps/
 *.o
 *.a
 *.so
 .DS_Store
+
+# Generated CMake files
+build.ninja
+CTestTestfile.cmake
+cmake_install.cmake

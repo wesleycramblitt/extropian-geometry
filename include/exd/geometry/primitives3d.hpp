@@ -123,5 +123,12 @@ MeshData generate_cylinder_mesh(const CylinderGeometry& geometry);
 MeshData generate_plane_mesh(const PlaneGeometry& geometry);
 MeshData generate_capsule_mesh(const CapsuleGeometry& geometry);
 MeshData generate_icosahedron_mesh(float radius, int subdivisions);
+MeshData generate_torus_mesh(const TorusGeometry& geometry);
+MeshData generate_cone_mesh(const ConeGeometry& geometry);
+MeshData generate_tube_mesh(const TubeGeometry& geometry);
+MeshData generate_disk_mesh(const DiskGeometry& geometry);
+MeshData generate_arrow3d_mesh(const Arrow3DGeometry& geometry);
+MeshData generate_axes_mesh(const AxesGeometry& geometry);
+MeshData generate_billboard_mesh(const BillboardGeometry& geometry);
 
 } // namespace exd::geometry
