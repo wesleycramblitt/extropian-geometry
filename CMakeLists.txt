@@ -44,6 +44,7 @@ add_library(exd-geometry STATIC
     src/primitives3d/arrow3d.cpp
     src/primitives3d/axes.cpp
     src/primitives3d/billboard.cpp
+    src/primitives3d/ellipsoid.cpp
     src/primitives2d/rounded_rect.cpp
     src/primitives2d/circle.cpp
     src/primitives2d/line.cpp

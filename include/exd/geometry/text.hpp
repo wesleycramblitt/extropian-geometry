@@ -49,6 +49,7 @@ struct TextStyle
     TextAlignment alignment = TextAlignment::Left;
     float         lineHeight = 1.2f;
     float         letterSpacing = 0.0f;
+    math::Quat    color = {1.0f, 1.0f, 1.0f, 1.0f}; // RGBA: w=R, x=G, y=B, z=A
 };
 
 // ── Glyph placement ──
@@ -104,11 +105,15 @@ std::unique_ptr<TextShaper> create_harfbuzz_shaper(const FontAtlas& atlas);
 /// Generate a textured quad mesh for a single glyph.
 /// The glyph's atlasRect must be filled in (via FontAtlas::rasterize_glyph) beforehand.
 /// The quad is placed at glyph.position with dimensions glyph.size, UV-mapped to atlasRect.
-MeshData generate_glyph_mesh(const GlyphPlacement& glyph);
+/// An optional vertex color can be applied (defaults to white).
+MeshData generate_glyph_mesh(const GlyphPlacement& glyph,
+                              math::Quat color = {1.0f, 1.0f, 1.0f, 1.0f});
 
 /// Generate a combined mesh for all glyphs in a shaped text run.
 /// Calls rasterize_glyph on atlas for any glyphs that haven't been rasterized yet.
 /// The output mesh contains one quad per glyph, positioned and UV-mapped.
-MeshData generate_text_mesh(const ShapedText& shaped, FontAtlas& atlas);
+/// An optional vertex color can be applied (defaults to white).
+MeshData generate_text_mesh(const ShapedText& shaped, FontAtlas& atlas,
+                             math::Quat color = {1.0f, 1.0f, 1.0f, 1.0f});
 
 } // namespace exd::geometry

@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <filesystem>
 #include <unordered_map>
 #include <vector>
 
@@ -62,6 +63,9 @@ struct FontAtlas::Impl {
     // Metrics cache
     std::unordered_map<GlyphCacheKey, CachedMetrics, GlyphCacheKeyHash> metricsCache;
 
+    // Font search paths for load_default() — user-populated via add_font_search_path()
+    std::vector<std::string> fontSearchPaths;
+
     Impl(int w, int h)
         : width(w), height(h), pixels(static_cast<size_t>(w) * h * 4, 0)
     {
@@ -89,7 +93,8 @@ struct FontAtlas::Impl {
           cursorY(other.cursorY),
           rowMaxHeight(other.rowMaxHeight),
           glyphCache(std::move(other.glyphCache)),
-          metricsCache(std::move(other.metricsCache))
+          metricsCache(std::move(other.metricsCache)),
+          fontSearchPaths(std::move(other.fontSearchPaths))
     {
         other.ftLibrary = nullptr;
         other.width = 0;
@@ -119,6 +124,7 @@ struct FontAtlas::Impl {
             rowMaxHeight = other.rowMaxHeight;
             glyphCache = std::move(other.glyphCache);
             metricsCache = std::move(other.metricsCache);
+            fontSearchPaths = std::move(other.fontSearchPaths);
 
             other.ftLibrary = nullptr;
             other.width = 0;
@@ -154,6 +160,57 @@ FontId FontAtlas::load_font(const std::string& path, int faceIndex) {
     FontId id = impl_->nextFontId++;
     impl_->faces[id] = face;
     return id;
+}
+
+FontId FontAtlas::load_font_memory(const uint8_t* data, size_t size, int faceIndex) {
+    if (!impl_ || !impl_->ftLibrary || !data || size == 0) return 0;
+
+    FT_Face face = nullptr;
+    FT_Error err = FT_New_Memory_Face(impl_->ftLibrary,
+                                      static_cast<const FT_Byte*>(data),
+                                      static_cast<FT_Long>(size),
+                                      faceIndex, &face);
+    if (err != FT_Err_Ok || !face) return 0;
+
+    FontId id = impl_->nextFontId++;
+    impl_->faces[id] = face;
+    return id;
+}
+
+FontId FontAtlas::load_default(DefaultFont which) {
+    if (!impl_) return 0;
+
+    // File name patterns to search for each default font category
+    struct Pattern { DefaultFont kind; const char* name; };
+    static const Pattern kPatterns[] = {
+        {DefaultFont::Sans,  "DejaVuSans.ttf"},
+        {DefaultFont::Sans,  "LiberationSans-Regular.ttf"},
+        {DefaultFont::Sans,  "NotoSans-Regular.ttf"},
+        {DefaultFont::Serif, "DejaVuSerif.ttf"},
+        {DefaultFont::Serif, "LiberationSerif-Regular.ttf"},
+        {DefaultFont::Serif, "NotoSerif-Regular.ttf"},
+        {DefaultFont::Mono,  "DejaVuSansMono.ttf"},
+        {DefaultFont::Mono,  "LiberationMono-Regular.ttf"},
+        {DefaultFont::Mono,  "NotoSansMono-Regular.ttf"},
+    };
+
+    for (const auto& dir : impl_->fontSearchPaths) {
+        for (const auto& pat : kPatterns) {
+            if (pat.kind != which) continue;
+            std::string path = dir + "/" + pat.name;
+            if (std::filesystem::exists(path)) {
+                FontId id = load_font(path, 0);
+                if (id != 0) return id;
+            }
+        }
+    }
+
+    return 0;
+}
+
+void FontAtlas::add_font_search_path(const std::string& directory) {
+    if (impl_)
+        impl_->fontSearchPaths.push_back(directory);
 }
 
 Bounds FontAtlas::rasterize_glyph(FontId font, GlyphId glyph, float fontSize) {

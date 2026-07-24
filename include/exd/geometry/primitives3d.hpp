@@ -123,6 +123,7 @@ MeshData generate_cylinder_mesh(const CylinderGeometry& geometry);
 MeshData generate_plane_mesh(const PlaneGeometry& geometry);
 MeshData generate_capsule_mesh(const CapsuleGeometry& geometry);
 MeshData generate_icosahedron_mesh(float radius, int subdivisions);
+MeshData generate_ellipsoid_mesh(const EllipsoidGeometry& geometry);
 MeshData generate_torus_mesh(const TorusGeometry& geometry);
 MeshData generate_cone_mesh(const ConeGeometry& geometry);
 MeshData generate_tube_mesh(const TubeGeometry& geometry);

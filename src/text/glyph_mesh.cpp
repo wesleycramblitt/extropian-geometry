@@ -4,7 +4,7 @@
 
 namespace exd::geometry {
 
-MeshData generate_glyph_mesh(const GlyphPlacement& glyph) {
+MeshData generate_glyph_mesh(const GlyphPlacement& glyph, math::Quat color) {
     MeshBuilder builder;
     builder.reserve(4, 6);
 
@@ -19,10 +19,10 @@ MeshData generate_glyph_mesh(const GlyphPlacement& glyph) {
     float v1 = glyph.atlasRect.max.y;
 
     Vertex va, vb, vc, vd;
-    va.position = {x,     y,     0.0f}; va.uv = {u0, v0, 0.0f};
-    vb.position = {x + w, y,     0.0f}; vb.uv = {u1, v0, 0.0f};
-    vc.position = {x + w, y + h, 0.0f}; vc.uv = {u1, v1, 0.0f};
-    vd.position = {x,     y + h, 0.0f}; vd.uv = {u0, v1, 0.0f};
+    va.position = {x,     y,     0.0f}; va.uv = {u0, v0, 0.0f}; va.color = color;
+    vb.position = {x + w, y,     0.0f}; vb.uv = {u1, v0, 0.0f}; vb.color = color;
+    vc.position = {x + w, y + h, 0.0f}; vc.uv = {u1, v1, 0.0f}; vc.color = color;
+    vd.position = {x,     y + h, 0.0f}; vd.uv = {u0, v1, 0.0f}; vd.color = color;
 
     va.normal = vb.normal = vc.normal = vd.normal = {0.0f, 0.0f, 1.0f};
 
@@ -37,7 +37,7 @@ MeshData generate_glyph_mesh(const GlyphPlacement& glyph) {
     return builder.build();
 }
 
-MeshData generate_text_mesh(const ShapedText& shaped, FontAtlas& atlas) {
+MeshData generate_text_mesh(const ShapedText& shaped, FontAtlas& atlas, math::Quat color) {
     MeshBuilder builder;
 
     for (const auto& gp : shaped.glyphs) {
@@ -63,10 +63,10 @@ MeshData generate_text_mesh(const ShapedText& shaped, FontAtlas& atlas) {
         float v1 = rect.max.y;
 
         Vertex va, vb, vc, vd;
-        va.position = {x,     y,     0.0f}; va.uv = {u0, v0, 0.0f};
-        vb.position = {x + w, y,     0.0f}; vb.uv = {u1, v0, 0.0f};
-        vc.position = {x + w, y + h, 0.0f}; vc.uv = {u1, v1, 0.0f};
-        vd.position = {x,     y + h, 0.0f}; vd.uv = {u0, v1, 0.0f};
+        va.position = {x,     y,     0.0f}; va.uv = {u0, v0, 0.0f}; va.color = color;
+        vb.position = {x + w, y,     0.0f}; vb.uv = {u1, v0, 0.0f}; vb.color = color;
+        vc.position = {x + w, y + h, 0.0f}; vc.uv = {u1, v1, 0.0f}; vc.color = color;
+        vd.position = {x,     y + h, 0.0f}; vd.uv = {u0, v1, 0.0f}; vd.color = color;
 
         va.normal = vb.normal = vc.normal = vd.normal = {0.0f, 0.0f, 1.0f};
 

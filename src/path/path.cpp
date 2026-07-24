@@ -505,16 +505,57 @@ std::vector<std::array<size_t, 3>> triangulate_ear_clip(std::vector<math::Vec3f>
 // SECTION 5: Fill Tessellation
 // ============================================================================
 
-MeshData Path2D::tessellateFill(FillRule /*rule*/, float tolerance) const
+// Point-in-polygon test using even-odd ray casting (2D, XY plane)
+static bool point_in_polygon_evenodd(const math::Vec3f& p,
+                                     const std::vector<math::Vec3f>& poly)
+{
+    size_t n = poly.size();
+    if (n < 3) return false;
+    bool inside = false;
+    for (size_t i = 0, j = n - 1; i < n; j = i++)
+    {
+        float xi = poly[i].x, yi = poly[i].y;
+        float xj = poly[j].x, yj = poly[j].y;
+        if (((yi > p.y) != (yj > p.y)) &&
+            (p.x < (xj - xi) * (p.y - yi) / (yj - yi) + xi))
+            inside = !inside;
+    }
+    return inside;
+}
+
+MeshData Path2D::tessellateFill(FillRule rule, float tolerance) const
 {
     if (impl_->commands.empty()) return {};
 
     auto polygons = build_polygons(impl_->commands, tolerance);
     if (polygons.empty()) return {};
 
+    // EvenOdd fill rule: classify each polygon by containment depth.
+    // Only fill polygons with odd depth (1, 3, 5, ...).
+    std::vector<bool> shouldFill(polygons.size(), true);
+    if (rule == FillRule::EvenOdd && polygons.size() > 1)
+    {
+        for (size_t i = 0; i < polygons.size(); ++i)
+        {
+            int depth = 0;
+            // Use the first vertex of polygon i as test point
+            const auto& testPt = polygons[i].vertices[0];
+            for (size_t j = 0; j < polygons.size(); ++j)
+            {
+                if (i == j) continue;
+                if (point_in_polygon_evenodd(testPt, polygons[j].vertices))
+                    ++depth;
+            }
+            // Odd depth = fill (1, 3, 5...), Even depth = hole (0, 2, 4...)
+            shouldFill[i] = (depth % 2) == 1;
+        }
+    }
+
     MeshBuilder builder;
 
-    for (const auto& poly : polygons) {
+    for (size_t pi = 0; pi < polygons.size(); ++pi) {
+        if (!shouldFill[pi]) continue;
+        const auto& poly = polygons[pi];
         auto tris = triangulate_ear_clip(poly.vertices);
         if (tris.empty()) continue;
 
@@ -660,6 +701,239 @@ std::vector<Subpath> build_subpaths(const std::vector<PathCmd>& commands, float 
 
 } // anonymous namespace
 
+// ============================================================================
+// SECTION 6: Stroke Helpers
+// ============================================================================
+
+namespace
+{
+
+constexpr int kRoundCapSegments = 8;  // number of triangles in a round cap semicircle
+
+/// Add a semicircular fan for a round cap at point p, facing direction -dir.
+static void add_round_cap(MeshBuilder& builder,
+                          const math::Vec3f& p,
+                          const math::Vec3f& dir,
+                          float hw)
+{
+    math::Vec3f perp = {-dir.y, dir.x, 0.0f};
+    uint32_t centerIdx = [&]() {
+        Vertex cv;
+        cv.position = p;
+        cv.normal = {0, 0, 1};
+        return builder.add_vertex(cv);
+    }();
+    uint32_t firstIdx = [&]() {
+        Vertex v;
+        v.position = p + perp * hw;
+        v.normal = {0, 0, 1};
+        return builder.add_vertex(v);
+    }();
+    uint32_t prevIdx = firstIdx;
+    const float step = std::numbers::pi_v<float> / static_cast<float>(kRoundCapSegments);
+    for (int i = 1; i <= kRoundCapSegments; ++i) {
+        float a = step * i;
+        math::Vec3f radial = perp * std::cos(a) - dir * std::sin(a);
+        Vertex v;
+        v.position = p + radial * hw;
+        v.normal = {0, 0, 1};
+        uint32_t currIdx = builder.add_vertex(v);
+        builder.add_triangle(centerIdx, prevIdx, currIdx);
+        prevIdx = currIdx;
+    }
+}
+
+/// Add a round join at vertex p between incoming segment (dirIn points toward p)
+/// and outgoing segment (dirOut points away from p).
+static void add_round_join(MeshBuilder& builder,
+                           const math::Vec3f& p,
+                           const math::Vec3f& dirIn,
+                           const math::Vec3f& dirOut,
+                           float hw)
+{
+    // Compute the outer turning angle
+    math::Vec3f perpIn  = {dirIn.y, -dirIn.x, 0.0f};  // left side of incoming
+    math::Vec3f perpOut = {-dirOut.y, dirOut.x, 0.0f}; // left side of outgoing
+
+    // Determine if this is an "outside" (convex) or "inside" (concave) turn
+    float cross = dirIn.x * dirOut.y - dirIn.y * dirOut.x; // Z-component of cross(dirIn, dirOut)
+    bool convex = cross < 0.0f; // turning left (CCW) = convex corner to fill
+
+    // Use 8 segments for the arc
+    constexpr int segs = 8;
+    float startAngle = std::atan2(perpIn.y, perpIn.x);
+    float endAngle   = std::atan2(perpOut.y, perpOut.x);
+    if (!convex) {
+        std::swap(startAngle, endAngle);
+    }
+
+    // Normalize angle range
+    float sweep = endAngle - startAngle;
+    if (convex && sweep < 0.0f) sweep += 2.0f * std::numbers::pi_v<float>;
+    if (!convex && sweep > 0.0f) sweep -= 2.0f * std::numbers::pi_v<float>;
+
+    uint32_t centerIdx = [&]() {
+        Vertex cv;
+        cv.position = p;
+        cv.normal = {0, 0, 1};
+        return builder.add_vertex(cv);
+    }();
+
+    float prevX = std::cos(startAngle);
+    float prevY = std::sin(startAngle);
+    uint32_t prevIdx = [&]() {
+        Vertex v;
+        v.position = {p.x + prevX * hw, p.y + prevY * hw, 0.0f};
+        v.normal = {0, 0, 1};
+        return builder.add_vertex(v);
+    }();
+
+    float step = sweep / static_cast<float>(segs);
+    for (int i = 1; i <= segs; ++i) {
+        float a = startAngle + step * i;
+        float cx = std::cos(a), sy = std::sin(a);
+        Vertex v;
+        v.position = {p.x + cx * hw, p.y + sy * hw, 0.0f};
+        v.normal = {0, 0, 1};
+        uint32_t currIdx = builder.add_vertex(v);
+        if (convex) {
+            builder.add_triangle(centerIdx, prevIdx, currIdx);
+        } else {
+            builder.add_triangle(centerIdx, currIdx, prevIdx);
+        }
+        prevIdx = currIdx;
+    }
+}
+
+/// Add a bevel join: single triangle filling the gap.
+static void add_bevel_join(MeshBuilder& builder,
+                           const math::Vec3f& p,
+                           const math::Vec3f& dirIn,
+                           const math::Vec3f& dirOut,
+                           float hw)
+{
+    math::Vec3f perpIn  = {dirIn.y, -dirIn.x, 0.0f};
+    math::Vec3f perpOut = {-dirOut.y, dirOut.x, 0.0f};
+    float cross = dirIn.x * dirOut.y - dirIn.y * dirOut.x;
+    bool convex = cross < 0.0f;
+
+    if (convex) {
+        Vertex c, a, b;
+        c.position = p;
+        a.position = p + perpIn * hw;
+        b.position = p + perpOut * hw;
+        c.normal = a.normal = b.normal = {0, 0, 1};
+        auto ic = builder.add_vertex(c);
+        auto ia = builder.add_vertex(a);
+        auto ib = builder.add_vertex(b);
+        builder.add_triangle(ic, ia, ib);
+    }
+}
+
+/// Add a miter join: extend edges until they intersect.
+/// Falls back to bevel if the miter length exceeds miterLimit * hw.
+static void add_miter_join(MeshBuilder& builder,
+                           const math::Vec3f& p,
+                           const math::Vec3f& dirIn,
+                           const math::Vec3f& dirOut,
+                           float hw,
+                           float miterLimit)
+{
+    math::Vec3f perpIn  = {dirIn.y, -dirIn.x, 0.0f};
+    math::Vec3f perpOut = {-dirOut.y, dirOut.x, 0.0f};
+    float cross = dirIn.x * dirOut.y - dirIn.y * dirOut.x;
+    bool convex = cross < 0.0f;
+    if (!convex) return; // No fill needed for concave corners
+
+    // Compute the miter point: intersection of the two offset lines
+    // Line 1: p + perpIn * hw + t * dirIn
+    // Line 2: p + perpOut * hw + s * dirOut
+    float denom = dirIn.x * dirOut.y - dirIn.y * dirOut.x;
+    if (std::abs(denom) < 1e-8f) return; // parallel edges, no miter
+
+    math::Vec3f diff = (p + perpOut * hw) - (p + perpIn * hw);
+    float t = (diff.x * dirOut.y - diff.y * dirOut.x) / denom;
+    math::Vec3f miterPt = p + perpIn * hw + dirIn * t;
+
+    // Check miter length
+    float miterLen = (miterPt - (p + perpIn * hw)).length();
+    if (miterLen > miterLimit * hw) {
+        add_bevel_join(builder, p, dirIn, dirOut, hw);
+        return;
+    }
+
+    Vertex vc, va, vb, vm;
+    vc.position = p;
+    va.position = p + perpIn * hw;
+    vb.position = p + perpOut * hw;
+    vm.position = miterPt;
+    vc.normal = va.normal = vb.normal = vm.normal = {0, 0, 1};
+
+    auto ic = builder.add_vertex(vc);
+    auto ia = builder.add_vertex(va);
+    auto ib = builder.add_vertex(vb);
+    auto im = builder.add_vertex(vm);
+
+    builder.add_triangle(ic, ia, im);
+    builder.add_triangle(ic, im, ib);
+}
+
+/// Apply dash pattern to a single segment.
+/// Returns pairs of (start, end) t-parameters for visible dash segments.
+static void dash_segment(const math::Vec3f& a,
+                         const math::Vec3f& b,
+                         const StrokeStyle& style,
+                         float& inoutDashOffset,
+                         std::vector<std::pair<math::Vec3f, math::Vec3f>>& outSegments)
+{
+    float segLen = (b - a).length();
+    if (segLen < 1e-6f) return;
+
+    math::Vec3f dir = (b - a) / segLen;
+
+    const auto& pattern = style.dashPattern;
+    if (pattern.empty()) {
+        outSegments.push_back({a, b});
+        return;
+    }
+
+    // Compute total pattern length
+    float patternLen = 0.0f;
+    for (float p : pattern) patternLen += p;
+    if (patternLen < 1e-6f) {
+        outSegments.push_back({a, b});
+        return;
+    }
+
+    // Normalize dashOffset
+    float offset = std::fmod(style.dashOffset, patternLen);
+    if (offset < 0.0f) offset += patternLen;
+
+    float traveled = -offset; // start before the segment
+    while (traveled < segLen) {
+        for (size_t i = 0; i < pattern.size(); ++i) {
+            float dashLen = pattern[i];
+            bool isOn = (i % 2 == 0); // even indices = dash, odd = gap
+            float segStart = std::max(traveled, 0.0f);
+            float segEnd   = std::min(traveled + dashLen, segLen);
+            if (segEnd > segStart && isOn) {
+                math::Vec3f s = a + dir * segStart;
+                math::Vec3f e = a + dir * segEnd;
+                outSegments.push_back({s, e});
+            }
+            traveled += dashLen;
+            if (traveled >= segLen) break;
+        }
+    }
+    inoutDashOffset = std::fmod(inoutDashOffset + segLen, patternLen);
+}
+
+} // anonymous namespace
+
+// ============================================================================
+// SECTION 7: Stroke Tessellation
+// ============================================================================
+
 MeshData Path2D::tessellateStroke(const StrokeStyle& style, float tolerance) const
 {
     if (impl_->commands.empty()) return {};
@@ -669,23 +943,41 @@ MeshData Path2D::tessellateStroke(const StrokeStyle& style, float tolerance) con
 
     MeshBuilder builder;
     float hw = style.width * 0.5f;
+    bool hasDash = !style.dashPattern.empty();
+    float dashOffset = style.dashOffset;
 
     for (const auto& sp : subpaths) {
         const auto& pts = sp.points;
         size_t n = pts.size();
         if (n < 2) continue;
 
-        // ── Generate quads for each segment ──────────────────────────────
-        for (size_t i = 0; i < n - 1; ++i) {
-            const auto& a = pts[i];
-            const auto& b = pts[i + 1];
+        // Apply dash pattern: split original points into dash segments
+        std::vector<math::Vec3f> dashPts;
+        if (hasDash) {
+            for (size_t i = 0; i < n - 1; ++i) {
+                std::vector<std::pair<math::Vec3f, math::Vec3f>> segs;
+                dash_segment(pts[i], pts[i + 1], style, dashOffset, segs);
+                for (const auto& seg : segs) {
+                    if (dashPts.empty())
+                        dashPts.push_back(seg.first);
+                    dashPts.push_back(seg.second);
+                }
+            }
+            if (dashPts.size() < 2) continue;
+        }
 
+        const auto& workingPts = hasDash ? dashPts : pts;
+        size_t wn = workingPts.size();
+        bool isClosed = sp.closed && !hasDash; // dashing breaks closure
+
+        // ── Generate quads for each segment ──
+        for (size_t i = 0; i < wn - 1; ++i) {
+            const auto& a = workingPts[i];
+            const auto& b = workingPts[i + 1];
             math::Vec3f dir = b - a;
             float len = dir.length();
             if (len < 1e-6f) continue;
             dir = dir / len;
-
-            // Perpendicular in XY plane (rotate +90 deg around Z)
             math::Vec3f perp = {-dir.y, dir.x, 0.0f};
 
             Vertex v0, v1, v2, v3;
@@ -693,38 +985,96 @@ MeshData Path2D::tessellateStroke(const StrokeStyle& style, float tolerance) con
             v1.position = a + perp * hw;
             v2.position = b + perp * hw;
             v3.position = b - perp * hw;
-
             v0.normal = v1.normal = v2.normal = v3.normal = {0, 0, 1};
 
             auto i0 = builder.add_vertex(v0);
             auto i1 = builder.add_vertex(v1);
             auto i2 = builder.add_vertex(v2);
             auto i3 = builder.add_vertex(v3);
-
             builder.add_triangle(i0, i1, i2);
             builder.add_triangle(i0, i2, i3);
         }
 
-        // ── Caps for open subpaths ───────────────────────────────────────
-        if (!sp.closed) {
+        // ── Joins between segments ──
+        if (style.join != LineJoin::Miter || !isClosed) {
+            for (size_t i = 1; i < wn - 1; ++i) {
+                math::Vec3f dirIn  = workingPts[i] - workingPts[i - 1];
+                math::Vec3f dirOut = workingPts[i + 1] - workingPts[i];
+                float li = dirIn.length();
+                float lo = dirOut.length();
+                if (li < 1e-6f || lo < 1e-6f) continue;
+                dirIn = dirIn / li;
+                dirOut = dirOut / lo;
+
+                switch (style.join) {
+                case LineJoin::Round:
+                    add_round_join(builder, workingPts[i], dirIn, dirOut, hw);
+                    break;
+                case LineJoin::Bevel:
+                    add_bevel_join(builder, workingPts[i], dirIn, dirOut, hw);
+                    break;
+                case LineJoin::Miter:
+                    add_miter_join(builder, workingPts[i], dirIn, dirOut, hw, style.miterLimit);
+                    break;
+                }
+            }
+        }
+
+        // Also join the closed loop vertex
+        if (isClosed && wn >= 3) {
+            // Join between last segment and first segment
+            math::Vec3f dirIn  = workingPts[wn - 1] - workingPts[wn - 2];
+            math::Vec3f dirOut = workingPts[1] - workingPts[0];
+            float li = dirIn.length();
+            float lo = dirOut.length();
+            if (li > 1e-6f && lo > 1e-6f) {
+                dirIn = dirIn / li;
+                dirOut = dirOut / lo;
+                math::Vec3f firstPt = workingPts[0];
+                // Also join at the first/last point
+                math::Vec3f dirLastIn  = workingPts[wn - 1] - workingPts[wn - 2];
+                math::Vec3f dirFirstOut = workingPts[1] - workingPts[0];
+                li = dirLastIn.length();
+                lo = dirFirstOut.length();
+                if (li > 1e-6f && lo > 1e-6f) {
+                    dirLastIn = dirLastIn / li;
+                    dirFirstOut = dirFirstOut / lo;
+                    switch (style.join) {
+                    case LineJoin::Round:
+                        add_round_join(builder, firstPt, dirLastIn, dirFirstOut, hw);
+                        break;
+                    case LineJoin::Bevel:
+                        add_bevel_join(builder, firstPt, dirLastIn, dirFirstOut, hw);
+                        break;
+                    case LineJoin::Miter:
+                        add_miter_join(builder, firstPt, dirLastIn, dirFirstOut, hw, style.miterLimit);
+                        break;
+                    }
+                }
+            }
+        }
+
+        // ── Caps for open subpaths ──
+        if (!isClosed) {
             // Start cap
             {
-                const auto& p = pts.front();
-                const auto& q = pts[1];
+                const auto& p = workingPts.front();
+                const auto& q = workingPts[1];
                 math::Vec3f dir = q - p;
                 float len = dir.length();
                 if (len > 1e-6f) {
                     dir = dir / len;
                     math::Vec3f perp = {-dir.y, dir.x, 0.0f};
 
-                    if (style.cap == LineCap::Square) {
+                    if (style.cap == LineCap::Round) {
+                        add_round_cap(builder, p, dir, hw);
+                    } else if (style.cap == LineCap::Square) {
                         Vertex end0, end1, cap0, cap1;
                         end0.position = p - perp * hw;
                         end1.position = p + perp * hw;
                         cap0.position = p - perp * hw - dir * hw;
                         cap1.position = p + perp * hw - dir * hw;
                         end0.normal = end1.normal = cap0.normal = cap1.normal = {0, 0, 1};
-
                         auto e0 = builder.add_vertex(end0);
                         auto e1 = builder.add_vertex(end1);
                         auto c0 = builder.add_vertex(cap0);
@@ -732,28 +1082,28 @@ MeshData Path2D::tessellateStroke(const StrokeStyle& style, float tolerance) con
                         builder.add_triangle(e0, c1, c0);
                         builder.add_triangle(e0, e1, c1);
                     }
-                    // Butt cap: the first quad's edge already closes the end
                 }
             }
 
             // End cap
             {
-                const auto& p = pts.back();
-                const auto& q = pts[n - 2];
+                const auto& p = workingPts.back();
+                const auto& q = workingPts[wn - 2];
                 math::Vec3f dir = p - q;
                 float len = dir.length();
                 if (len > 1e-6f) {
                     dir = dir / len;
                     math::Vec3f perp = {-dir.y, dir.x, 0.0f};
 
-                    if (style.cap == LineCap::Square) {
+                    if (style.cap == LineCap::Round) {
+                        add_round_cap(builder, p, dir, hw);
+                    } else if (style.cap == LineCap::Square) {
                         Vertex end0, end1, cap0, cap1;
                         end0.position = p - perp * hw;
                         end1.position = p + perp * hw;
                         cap0.position = p - perp * hw + dir * hw;
                         cap1.position = p + perp * hw + dir * hw;
                         end0.normal = end1.normal = cap0.normal = cap1.normal = {0, 0, 1};
-
                         auto e0 = builder.add_vertex(end0);
                         auto e1 = builder.add_vertex(end1);
                         auto c0 = builder.add_vertex(cap0);

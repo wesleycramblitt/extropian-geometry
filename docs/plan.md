@@ -411,15 +411,21 @@ These should be gated behind a CMake option (`ENABLE_TEXT=ON` by default) so tha
 | Milestone | Status | Description |
 |---|---|---|
 | **M0** | ✅ Done | Repository foundation: CMake, core dependency, test framework |
-| **M1** | 🔶 Partial | MeshBuilder (done) + 3D primitives: Sphere (done), Box (done), stubs for Cylinder, Plane, Capsule, Icosahedron |
-| **M2** | ⬜ Not started | Remaining 3D primitives: Torus, Cone, Tube, Disk, Arrow, Axes, Billboard |
-| **M3** | ⬜ Not started | **MeshOps: `merge_meshes()`, `transform_mesh()`, `compute_bounds()`** — BLOCKER for ui |
-| **M4** | ⬜ Not started | **2D primitives: rounded_rect, circle, line** — BLOCKER for ui Button/Panel/Slider |
-| **M5** | ⬜ Not started | Remaining 2D primitives: arc, ring, polyline, arrow, grid |
-| **M6** | ⬜ Not started | Path2D: Bézier flattening, `tessellateFill()` |
-| **M7** | ⬜ Not started | Path2D: `tessellateStroke()` (joins, caps, dashes) |
-| **M8** | ⬜ Not started | Text: FontAtlas (FreeType), TextShaper interface + HarfBuzz backend |
-| **M9** | ⬜ Not started | Text: glyph mesh generation (`generate_text_mesh()`) |
+| **M1** | ✅ Done | MeshBuilder + 3D primitives: Sphere (UV + Icosphere), Box, Cylinder, Plane, Capsule, Icosahedron |
+| **M2** | ✅ Done | Remaining 3D primitives: Torus, Cone, Tube, Disk, Arrow, Axes, Billboard, Ellipsoid |
+| **M3** | ✅ Done | **MeshOps: `merge_meshes()`, `transform_mesh()`, `compute_bounds()`** |
+| **M4** | ✅ Done | **2D primitives: rounded_rect, circle, line** |
+| **M5** | ✅ Done | Remaining 2D primitives: ellipse, arc, ring, polyline, arrow, grid, rect |
+| **M6** | ✅ Done | Path2D: Bézier flattening, `tessellateFill()` (ear clipping, NonZero + EvenOdd) |
+| **M7** | ✅ Done | Path2D: `tessellateStroke()` (Butt/Square/Round caps, Miter/Round/Bevel joins, dash patterns) |
+| **M8** | ✅ Done | Text: FontAtlas (FreeType), TextShaper interface + HarfBuzz backend |
+| **M9** | ✅ Done | Text: glyph mesh generation, alignment, lineHeight, letterSpacing, maxWidth wrapping |
+| **M10** | ✅ Done | SDF Blending: smooth-min union, marching cubes extraction (sphere, box, capsule, cylinder, cone, torus) |
+| **M11** | ✅ Done | Comprehensive test coverage: 22 test executables, 170+ test cases |
+| **M12** | ⬜ Future | Lathe / Extrusion (revolve 2D profile, sweep along 3D curve) |
+| **M13** | ⬜ Future | CSG boolean operations (union, subtract, intersect) |
+| **M14** | ⬜ Future | Mesh content hashing for snapshot testing / cache deduplication |
+| **M15** | ⬜ Future | Mesh simplification / LOD generation |
 
 ---
 

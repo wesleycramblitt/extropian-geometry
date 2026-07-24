@@ -10,6 +10,15 @@
 
 namespace exd::geometry {
 
+// ── Default font selection ──
+
+enum class DefaultFont
+{
+    Sans,       // sans-serif (e.g. DejaVu Sans, Liberation Sans, Arial)
+    Serif,      // serif (e.g. DejaVu Serif, Liberation Serif, Times New Roman)
+    Mono,       // monospace (e.g. DejaVu Sans Mono, Liberation Mono, Courier New)
+};
+
 /// Manages font loading and glyph rasterization into a shared texture atlas.
 /// Uses FreeType internally. Callers can query atlas data for GPU upload.
 class FontAtlas {
@@ -27,6 +36,21 @@ public:
     /// faceIndex selects a face within a font collection (.ttc); default is 0.
     /// Returns 0 on failure.
     FontId load_font(const std::string& path, int faceIndex = 0);
+
+    /// Load a font from an in-memory buffer (for embedded/bundled fonts).
+    /// The buffer must remain valid for the lifetime of the FontAtlas.
+    /// Returns 0 on failure.
+    FontId load_font_memory(const uint8_t* data, size_t size, int faceIndex = 0);
+
+    /// Load a system default font. Searches registered search paths
+    /// (see add_font_search_path) for matching font files.
+    /// Returns 0 if no matching default font is found.
+    FontId load_default(DefaultFont which);
+
+    /// Register a directory to search for default fonts.
+    /// Paths are searched in the order they are added.
+    /// No paths are registered by default — call this to populate the search list.
+    void add_font_search_path(const std::string& directory);
 
     /// Rasterize a glyph at the given font size into the atlas.
     /// Returns the UV rectangle (normalized 0-1 atlas coordinates) for the glyph.

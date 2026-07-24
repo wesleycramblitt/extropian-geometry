@@ -87,6 +87,103 @@ TEST_CASE("sphere: texcoords in [0,1] range when enabled")
     }
 }
 
+TEST_CASE("sphere: icosphere construction mode")
+{
+    SphereGeometry geom;
+    geom.construction = SphereConstruction::Icosphere;
+    geom.radius = 1.0f;
+    geom.latitudeSegments = 2; // subdivisions
+    auto mesh = generate_sphere_mesh(geom);
+
+    CHECK(!mesh.vertices.empty());
+    CHECK(!mesh.indices.empty());
+    CHECK(mesh.topology == PrimitiveTopology::Triangles);
+
+    // All vertices should be on the unit sphere
+    for (const auto& v : mesh.vertices)
+    {
+        float dist = std::sqrt(v.position.x * v.position.x +
+                               v.position.y * v.position.y +
+                               v.position.z * v.position.z);
+        CHECK(dist == doctest::Approx(1.0f).epsilon(0.001f));
+    }
+}
+
+TEST_CASE("sphere: icosphere with zero subdivisions matches base icosahedron")
+{
+    SphereGeometry geom;
+    geom.construction = SphereConstruction::Icosphere;
+    geom.latitudeSegments = 0;
+    auto mesh = generate_sphere_mesh(geom);
+
+    CHECK(mesh.vertices.size() == 12);
+    CHECK(mesh.indices.size() == 60);
+}
+
+// ── Ellipsoid ───────────────────────────────────────────────────────────────
+
+TEST_CASE("ellipsoid: default prolate ellipsoid")
+{
+    EllipsoidGeometry geom; // radii=(0.5, 1.0, 0.5), lat=16, lon=32
+    auto mesh = generate_ellipsoid_mesh(geom);
+
+    CHECK(mesh.topology == PrimitiveTopology::Triangles);
+    // (16+1) * (32+1) = 561 vertices, same layout as UV sphere
+    CHECK(mesh.vertices.size() == 561);
+    CHECK(mesh.indices.size() == 3072);
+
+    // All vertices should satisfy ellipsoid equation within tolerance
+    for (const auto& v : mesh.vertices)
+    {
+        float ex = v.position.x / 0.5f;
+        float ey = v.position.y / 1.0f;
+        float ez = v.position.z / 0.5f;
+        CHECK(ex * ex + ey * ey + ez * ez == doctest::Approx(1.0f).epsilon(0.001f));
+    }
+
+    // Bounds should match radii
+    CHECK(mesh.bounds.min.x == doctest::Approx(-0.5f));
+    CHECK(mesh.bounds.max.x == doctest::Approx(0.5f));
+    CHECK(mesh.bounds.min.y == doctest::Approx(-1.0f));
+    CHECK(mesh.bounds.max.y == doctest::Approx(1.0f));
+    CHECK(mesh.bounds.min.z == doctest::Approx(-0.5f));
+    CHECK(mesh.bounds.max.z == doctest::Approx(0.5f));
+}
+
+TEST_CASE("ellipsoid: custom three-axis radii")
+{
+    EllipsoidGeometry geom;
+    geom.radii = {2.0f, 0.5f, 1.0f};
+    geom.latitudeSegments = 8;
+    geom.longitudeSegments = 16;
+    auto mesh = generate_ellipsoid_mesh(geom);
+
+    CHECK(mesh.vertices.size() == 9 * 17); // (8+1)*(16+1) = 153
+
+    for (const auto& v : mesh.vertices)
+    {
+        float ex = v.position.x / 2.0f;
+        float ey = v.position.y / 0.5f;
+        float ez = v.position.z / 1.0f;
+        CHECK(ex * ex + ey * ey + ez * ez == doctest::Approx(1.0f).epsilon(0.005f));
+    }
+
+    CHECK(mesh.bounds.min.x == doctest::Approx(-2.0f));
+    CHECK(mesh.bounds.max.x == doctest::Approx(2.0f));
+    CHECK(mesh.bounds.min.y == doctest::Approx(-0.5f));
+    CHECK(mesh.bounds.max.y == doctest::Approx(0.5f));
+    CHECK(mesh.bounds.min.z == doctest::Approx(-1.0f));
+    CHECK(mesh.bounds.max.z == doctest::Approx(1.0f));
+}
+
+TEST_CASE("ellipsoid: zero radius returns empty")
+{
+    EllipsoidGeometry geom;
+    geom.radii = {0.0f, 0.5f, 0.5f};
+    auto mesh = generate_ellipsoid_mesh(geom);
+    CHECK(mesh.vertices.empty());
+}
+
 // ── Box ────────────────────────────────────────────────────────────────────
 
 TEST_CASE("box: default unit box")

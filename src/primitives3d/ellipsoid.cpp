@@ -5,21 +5,15 @@
 namespace exd::geometry
 {
 
-MeshData generate_sphere_mesh(const SphereGeometry& geom)
+MeshData generate_ellipsoid_mesh(const EllipsoidGeometry& geom)
 {
-    // Icosphere construction: delegate to dedicated generator
-    if (geom.construction == SphereConstruction::Icosphere)
-    {
-        return generate_icosahedron_mesh(geom.radius,
-                                         static_cast<int>(geom.latitudeSegments));
-    }
-
-    // UV sphere construction
     constexpr float pi = 3.14159265358979323846f;
+
+    if (geom.radii.x <= 0.0f || geom.radii.y <= 0.0f || geom.radii.z <= 0.0f)
+        return {};
 
     int stacks = static_cast<int>(geom.latitudeSegments);
     int slices = static_cast<int>(geom.longitudeSegments);
-    float radius = geom.radius;
 
     math::Quat tangent_id{1.0f, 0.0f, 0.0f, 1.0f};
 
@@ -43,22 +37,33 @@ MeshData generate_sphere_mesh(const SphereGeometry& geom)
             float sin_phi = std::sin(phi);
             float cos_phi = std::cos(phi);
 
-            float x = radius * sin_theta * cos_phi;
-            float y = radius * cos_theta;
-            float z = radius * sin_theta * sin_phi;
+            // Unit sphere direction, then scale by radii
+            float ux = sin_theta * cos_phi;
+            float uy = cos_theta;
+            float uz = sin_theta * sin_phi;
 
             Vertex v;
-            v.position = math::Vec3f{x, y, z};
+            v.position = math::Vec3f{
+                geom.radii.x * ux,
+                geom.radii.y * uy,
+                geom.radii.z * uz
+            };
 
-            if (geom.generateNormals)
-                v.normal = math::Vec3f{sin_theta * cos_phi, cos_theta, sin_theta * sin_phi};
+            // Normal: for an ellipsoid x²/a² + y²/b² + z²/c² = 1,
+            // the unnormalized normal at (x,y,z) is (x/a², y/b², z/c²)
+            float nx = ux / geom.radii.x;
+            float ny = uy / geom.radii.y;
+            float nz = uz / geom.radii.z;
+            float nlen = std::sqrt(nx * nx + ny * ny + nz * nz);
+            v.normal = (nlen > 1e-8f)
+                ? math::Vec3f{nx / nlen, ny / nlen, nz / nlen}
+                : math::Vec3f{0.0f, 1.0f, 0.0f};
 
-            if (geom.generateTexcoords)
-                v.uv = math::Vec3f{
-                    static_cast<float>(j) / static_cast<float>(slices),
-                    static_cast<float>(i) / static_cast<float>(stacks),
-                    0.0f};
-
+            v.uv = math::Vec3f{
+                static_cast<float>(j) / static_cast<float>(slices),
+                static_cast<float>(i) / static_cast<float>(stacks),
+                0.0f
+            };
             v.tangent = tangent_id;
 
             vertices.push_back(v);
@@ -82,7 +87,15 @@ MeshData generate_sphere_mesh(const SphereGeometry& geom)
         }
     }
 
-    return MeshData{std::move(vertices), std::move(indices), PrimitiveTopology::Triangles};
+    MeshData mesh;
+    mesh.vertices = std::move(vertices);
+    mesh.indices  = std::move(indices);
+    mesh.topology = PrimitiveTopology::Triangles;
+    mesh.bounds   = {
+        {-geom.radii.x, -geom.radii.y, -geom.radii.z},
+        { geom.radii.x,  geom.radii.y,  geom.radii.z}
+    };
+    return mesh;
 }
 
 } // namespace exd::geometry
