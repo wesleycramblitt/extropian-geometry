@@ -16,7 +16,7 @@ static math::Vec3f normalize(const math::Vec3f& v)
     return {v.x * inv, v.y * inv, v.z * inv};
 }
 
-MeshData generate_icosahedron_mesh(float radius, int subdivisions)
+MeshData generate_icosahedron_mesh(float radius, int subdivisions, math::Quat color)
 {
     if (radius <= 0.0f)
         return {};
@@ -131,6 +131,7 @@ MeshData generate_icosahedron_mesh(float radius, int subdivisions)
         vtx.position = pos;
         vtx.normal   = nrm;
         vtx.uv       = {u, v, 0.0f};
+        vtx.color    = color;
         vertices.push_back(vtx);
     }
 

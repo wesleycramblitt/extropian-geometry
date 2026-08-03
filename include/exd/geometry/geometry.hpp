@@ -20,3 +20,8 @@
 
 // ── SDF Blending ──
 #include <exd/geometry/blend.hpp>
+
+// ── Advanced generators ──
+#include <exd/geometry/extrusion.hpp>
+#include <exd/geometry/heightmap.hpp>
+#include <exd/geometry/deform.hpp>

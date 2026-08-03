@@ -57,6 +57,7 @@ MeshData generate_capsule_mesh(const CapsuleGeometry& geometry)
             static_cast<float>(0) / static_cast<float>(slices), // placeholder, set below
             0.0f,
             0.0f};
+        v.color = geometry.color;
         return v;
     };
 

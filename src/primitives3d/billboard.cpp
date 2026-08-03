@@ -27,6 +27,7 @@ MeshData generate_billboard_mesh(const BillboardGeometry& geometry)
         v.normal   = {0.0f, 0.0f, 1.0f};
         v.uv       = {0.0f, 0.0f, 0.0f};
         v.tangent  = tangent_id;
+        v.color    = geometry.color;
         vertices.push_back(v);
     }
     // Bottom-right
@@ -36,6 +37,7 @@ MeshData generate_billboard_mesh(const BillboardGeometry& geometry)
         v.normal   = {0.0f, 0.0f, 1.0f};
         v.uv       = {1.0f, 0.0f, 0.0f};
         v.tangent  = tangent_id;
+        v.color    = geometry.color;
         vertices.push_back(v);
     }
     // Top-right
@@ -45,6 +47,7 @@ MeshData generate_billboard_mesh(const BillboardGeometry& geometry)
         v.normal   = {0.0f, 0.0f, 1.0f};
         v.uv       = {1.0f, 1.0f, 0.0f};
         v.tangent  = tangent_id;
+        v.color    = geometry.color;
         vertices.push_back(v);
     }
     // Top-left
@@ -54,6 +57,7 @@ MeshData generate_billboard_mesh(const BillboardGeometry& geometry)
         v.normal   = {0.0f, 0.0f, 1.0f};
         v.uv       = {0.0f, 1.0f, 0.0f};
         v.tangent  = tangent_id;
+        v.color    = geometry.color;
         vertices.push_back(v);
     }
 

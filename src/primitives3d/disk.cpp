@@ -54,6 +54,7 @@ MeshData generate_disk_mesh(const DiskGeometry& geometry)
                 0.0f
             };
             v.tangent  = tangent_id;
+            v.color    = geometry.color;
             vertices.push_back(v);
         }
 
@@ -73,6 +74,7 @@ MeshData generate_disk_mesh(const DiskGeometry& geometry)
                 0.0f
             };
             v.tangent  = tangent_id;
+            v.color    = geometry.color;
             vertices.push_back(v);
         }
 
@@ -105,6 +107,7 @@ MeshData generate_disk_mesh(const DiskGeometry& geometry)
             v.normal   = {0.0f, 1.0f, 0.0f};
             v.uv       = {0.5f, 0.5f, 0.0f};
             v.tangent  = tangent_id;
+            v.color    = geometry.color;
             vertices.push_back(v);
         }
 
@@ -126,6 +129,7 @@ MeshData generate_disk_mesh(const DiskGeometry& geometry)
                 0.0f
             };
             v.tangent  = tangent_id;
+            v.color    = geometry.color;
             vertices.push_back(v);
         }
 

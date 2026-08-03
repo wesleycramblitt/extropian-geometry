@@ -116,6 +116,7 @@ MeshData generate_tube_mesh(const TubeGeometry& geometry)
             v.normal   = radial; // already normalized
             v.uv       = {static_cast<float>(j) / static_cast<float>(radialSegments), v_uv, 0.0f};
             v.tangent  = tangent_id;
+            v.color    = geometry.color;
 
             vertices.push_back(v);
         }
@@ -157,6 +158,7 @@ MeshData generate_tube_mesh(const TubeGeometry& geometry)
             capVert.normal   = -frames[0].tangent;
             capVert.uv       = {0.5f, 0.0f, 0.0f};
             capVert.tangent  = tangent_id;
+            capVert.color    = geometry.color;
             vertices.push_back(capVert);
         }
 
@@ -179,6 +181,7 @@ MeshData generate_tube_mesh(const TubeGeometry& geometry)
             capVert.normal   = frames[n - 1].tangent;
             capVert.uv       = {0.5f, 1.0f, 0.0f};
             capVert.tangent  = tangent_id;
+            capVert.color    = geometry.color;
             vertices.push_back(capVert);
         }
 

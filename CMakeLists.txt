@@ -55,13 +55,15 @@ add_library(exd-geometry STATIC
     src/primitives2d/polyline.cpp
     src/primitives2d/arrow.cpp
     src/primitives2d/grid.cpp
+    src/primitives2d/star.cpp
+    src/primitives2d/regular_polygon.cpp
     src/path/path.cpp
-    src/text/text.cpp
-    src/text/font.cpp
-    src/text/glyph_mesh.cpp
     src/blend/blend.cpp
     src/blend/sdf_primitives.cpp
     src/blend/marching_cubes.cpp
+    src/extrusion/extrusion.cpp
+    src/heightmap/heightmap.cpp
+    src/deform/deform.cpp
 )
 
 add_library(exd::geometry ALIAS exd-geometry)
@@ -78,10 +80,18 @@ target_link_libraries(exd-geometry PUBLIC
 
 # ── Text support ──
 if(ENABLE_TEXT)
+    target_sources(exd-geometry PRIVATE
+        src/text/text.cpp
+        src/text/font.cpp
+        src/text/glyph_mesh.cpp
+    )
     target_compile_definitions(exd-geometry PUBLIC EXD_GEOMETRY_HAS_TEXT=1)
     target_include_directories(exd-geometry PRIVATE ${FREETYPE_INCLUDE_DIRS} ${HARFBUZZ_INCLUDE_DIRS})
     target_link_libraries(exd-geometry PUBLIC ${FREETYPE_LIBRARIES} ${HARFBUZZ_LIBRARIES})
 endif()
+
+# ── Demo (optional, links to extropian-render) ──
+add_subdirectory(demo)
 
 # ── Tests ──
 option(BUILD_TESTS "Build Geometry tests" OFF)

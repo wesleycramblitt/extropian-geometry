@@ -35,6 +35,7 @@ MeshData generate_box_mesh(const BoxGeometry& geom)
     {
         Vertex v;
         v.normal = f.n;
+        v.color = geom.color;
 
         set_position(v, f.v0); uint32_t a = builder.add_vertex(v);
         set_position(v, f.v1); uint32_t b = builder.add_vertex(v);

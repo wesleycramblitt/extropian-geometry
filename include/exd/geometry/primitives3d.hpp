@@ -24,11 +24,13 @@ struct SphereGeometry
     SphereConstruction construction = SphereConstruction::Uv;
     bool generateNormals = true;
     bool generateTexcoords = true;
+    math::Quat color = {1.0f, 1.0f, 1.0f, 1.0f};
 };
 
 struct BoxGeometry
 {
     math::Vec3f size = {1.0f, 1.0f, 1.0f};
+    math::Quat  color = {1.0f, 1.0f, 1.0f, 1.0f};
 };
 
 struct PlaneGeometry
@@ -36,6 +38,7 @@ struct PlaneGeometry
     math::Vec3f size = {1.0f, 0.0f, 1.0f};
     uint32_t segmentsW = 1;
     uint32_t segmentsD = 1;
+    math::Quat  color = {1.0f, 1.0f, 1.0f, 1.0f};
 };
 
 struct EllipsoidGeometry
@@ -43,6 +46,7 @@ struct EllipsoidGeometry
     math::Vec3f radii = {0.5f, 1.0f, 0.5f};
     uint32_t latitudeSegments = 16;
     uint32_t longitudeSegments = 32;
+    math::Quat  color = {1.0f, 1.0f, 1.0f, 1.0f};
 };
 
 struct CylinderGeometry
@@ -51,6 +55,7 @@ struct CylinderGeometry
     float height = 1.0f;
     uint32_t slices = 32;
     bool capped = true;
+    math::Quat color = {1.0f, 1.0f, 1.0f, 1.0f};
 };
 
 struct ConeGeometry
@@ -59,6 +64,7 @@ struct ConeGeometry
     float height = 1.0f;
     uint32_t slices = 32;
     bool capped = true;
+    math::Quat color = {1.0f, 1.0f, 1.0f, 1.0f};
 };
 
 struct CapsuleGeometry
@@ -67,6 +73,7 @@ struct CapsuleGeometry
     float height = 1.0f;
     uint32_t slices = 32;
     uint32_t stacks = 8;
+    math::Quat color = {1.0f, 1.0f, 1.0f, 1.0f};
 };
 
 struct TorusGeometry
@@ -75,6 +82,7 @@ struct TorusGeometry
     float minorRadius = 0.3f;
     uint32_t majorSegments = 32;
     uint32_t minorSegments = 16;
+    math::Quat color = {1.0f, 1.0f, 1.0f, 1.0f};
 };
 
 struct TubeGeometry
@@ -83,6 +91,7 @@ struct TubeGeometry
     float radius = 0.1f;
     uint32_t radialSegments = 16;
     bool capped = true;
+    math::Quat color = {1.0f, 1.0f, 1.0f, 1.0f};
 };
 
 struct DiskGeometry
@@ -90,6 +99,7 @@ struct DiskGeometry
     float outerRadius = 1.0f;
     float innerRadius = 0.0f;
     uint32_t segments = 32;
+    math::Quat color = {1.0f, 1.0f, 1.0f, 1.0f};
 };
 
 struct Arrow3DGeometry
@@ -100,6 +110,7 @@ struct Arrow3DGeometry
     float headLength  = 0.3f;
     float shaftRadius = 0.05f;
     uint32_t slices = 16;
+    math::Quat color = {1.0f, 1.0f, 1.0f, 1.0f};
 };
 
 struct AxesGeometry
@@ -108,11 +119,13 @@ struct AxesGeometry
     float shaftRadius = 0.02f;
     float headRadius  = 0.06f;
     float headLength  = 0.15f;
+    math::Quat color = {1.0f, 1.0f, 1.0f, 1.0f}; // overridden per-axis
 };
 
 struct BillboardGeometry
 {
     math::Vec3f size = {1.0f, 1.0f, 0.0f};
+    math::Quat  color = {1.0f, 1.0f, 1.0f, 1.0f};
 };
 
 // ── 3D mesh generators ──
@@ -122,7 +135,7 @@ MeshData generate_box_mesh(const BoxGeometry& geometry);
 MeshData generate_cylinder_mesh(const CylinderGeometry& geometry);
 MeshData generate_plane_mesh(const PlaneGeometry& geometry);
 MeshData generate_capsule_mesh(const CapsuleGeometry& geometry);
-MeshData generate_icosahedron_mesh(float radius, int subdivisions);
+MeshData generate_icosahedron_mesh(float radius, int subdivisions, math::Quat color = {1.0f, 1.0f, 1.0f, 1.0f});
 MeshData generate_ellipsoid_mesh(const EllipsoidGeometry& geometry);
 MeshData generate_torus_mesh(const TorusGeometry& geometry);
 MeshData generate_cone_mesh(const ConeGeometry& geometry);

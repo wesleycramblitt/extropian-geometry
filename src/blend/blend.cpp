@@ -28,16 +28,37 @@ static float smin(float a, float b, float k)
 }
 
 /// Evaluate the combined signed distance field at a world-space point.
+/// Handles Union (smooth-min), Subtract (max(a, -b)), and Intersect (max of all).
 static float evaluate_combined_sdf(const math::Vec3f& p,
                                    const std::vector<BlendPrimitive>& prims,
-                                   float blendK)
+                                   float blendK,
+                                   BlendOp op)
 {
     if (prims.empty()) return 1e10f;
 
-    float d = evaluate_primitive_sdf(p, prims[0]);
-    for (size_t i = 1; i < prims.size(); ++i)
-        d = smin(d, evaluate_primitive_sdf(p, prims[i]), blendK);
-    return d;
+    switch (op)
+    {
+    case BlendOp::Union: {
+        float d = evaluate_primitive_sdf(p, prims[0]);
+        for (size_t i = 1; i < prims.size(); ++i)
+            d = smin(d, evaluate_primitive_sdf(p, prims[i]), blendK);
+        return d;
+    }
+    case BlendOp::Subtract: {
+        // First primitive minus all others
+        float d = evaluate_primitive_sdf(p, prims[0]);
+        for (size_t i = 1; i < prims.size(); ++i)
+            d = std::max(d, -evaluate_primitive_sdf(p, prims[i]));
+        return d;
+    }
+    case BlendOp::Intersect: {
+        float d = evaluate_primitive_sdf(p, prims[0]);
+        for (size_t i = 1; i < prims.size(); ++i)
+            d = std::max(d, evaluate_primitive_sdf(p, prims[i]));
+        return d;
+    }
+    }
+    return 1e10f;
 }
 
 // ============================================================================
@@ -118,7 +139,8 @@ static void compute_grid_bounds(const std::vector<BlendPrimitive>& prims,
 /// Fill the grid by evaluating the combined SDF at each grid point.
 static void fill_grid(SdfGrid& grid,
                       const std::vector<BlendPrimitive>& prims,
-                      float blendK)
+                      float blendK,
+                      BlendOp op)
 {
     for (int iz = 0; iz < grid.nz; ++iz)
     {
@@ -132,7 +154,7 @@ static void fill_grid(SdfGrid& grid,
                     grid.origin.z + iz * grid.cellSize
                 };
                 grid.values[iz * (grid.nx * grid.ny) + iy * grid.nx + ix] =
-                    evaluate_combined_sdf(p, prims, blendK);
+                    evaluate_combined_sdf(p, prims, blendK, op);
             }
         }
     }
@@ -198,7 +220,7 @@ MeshData generate_blend_mesh(const BlendGeometry& geometry)
     grid.cellSize = cellSize;
     grid.values.resize(static_cast<size_t>(nx) * ny * nz);
 
-    fill_grid(grid, prims, geometry.blendRadius);
+    fill_grid(grid, prims, geometry.blendRadius, geometry.op);
 
     // Extract isosurface
     auto mesh = extract_isosurface(grid, geometry.generateNormals);

@@ -44,6 +44,7 @@ MeshData generate_cylinder_mesh(const CylinderGeometry& geometry)
             vert.position = {radius * cos_phi, y, radius * sin_phi};
             vert.normal   = {cos_phi, 0.0f, sin_phi};
             vert.uv       = {static_cast<float>(i) / static_cast<float>(slices), v, 0.0f};
+            vert.color    = geometry.color;
             vertices.push_back(vert);
         }
     }
@@ -76,6 +77,7 @@ MeshData generate_cylinder_mesh(const CylinderGeometry& geometry)
             vert.position = {0.0f, -halfH, 0.0f};
             vert.normal   = {0.0f, -1.0f, 0.0f};
             vert.uv       = {0.5f, 0.5f, 0.0f};
+            vert.color    = geometry.color;
             vertices.push_back(vert);
         }
 
@@ -85,6 +87,7 @@ MeshData generate_cylinder_mesh(const CylinderGeometry& geometry)
             vert.position = {0.0f, halfH, 0.0f};
             vert.normal   = {0.0f, 1.0f, 0.0f};
             vert.uv       = {0.5f, 0.5f, 0.0f};
+            vert.color    = geometry.color;
             vertices.push_back(vert);
         }
 

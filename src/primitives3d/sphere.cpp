@@ -10,8 +10,9 @@ MeshData generate_sphere_mesh(const SphereGeometry& geom)
     // Icosphere construction: delegate to dedicated generator
     if (geom.construction == SphereConstruction::Icosphere)
     {
-        return generate_icosahedron_mesh(geom.radius,
-                                         static_cast<int>(geom.latitudeSegments));
+            return generate_icosahedron_mesh(geom.radius,
+                                             static_cast<int>(geom.latitudeSegments),
+                                             geom.color);
     }
 
     // UV sphere construction
@@ -60,6 +61,7 @@ MeshData generate_sphere_mesh(const SphereGeometry& geom)
                     0.0f};
 
             v.tangent = tangent_id;
+            v.color = geom.color;
 
             vertices.push_back(v);
         }

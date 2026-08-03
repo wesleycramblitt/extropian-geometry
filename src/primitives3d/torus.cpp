@@ -53,6 +53,7 @@ MeshData generate_torus_mesh(const TorusGeometry& geometry)
                 static_cast<float>(j) / static_cast<float>(minorSegs),
                 0.0f};
             v.tangent = tangent_id;
+            v.color = geometry.color;
 
             vertices.push_back(v);
         }

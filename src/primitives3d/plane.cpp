@@ -39,6 +39,7 @@ MeshData generate_plane_mesh(const PlaneGeometry& geometry)
             vert.position = {x, 0.0f, z};
             vert.normal   = {0.0f, 1.0f, 0.0f};
             vert.uv       = {u, v, 0.0f};
+            vert.color    = geometry.color;
             vertices.push_back(vert);
         }
     }

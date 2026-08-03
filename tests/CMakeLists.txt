@@ -5,6 +5,7 @@ add_executable(test_mesh_ops       unit/mesh_ops_test.cpp)
 add_executable(test_mesh_builder   unit/mesh_builder_test.cpp)
 add_executable(test_path           unit/path_test.cpp)
 add_executable(test_blend           unit/blend_test.cpp)
+add_executable(test_advanced        unit/advanced_test.cpp)
 
 set(TEST_TARGETS
     test_2d_primitives
@@ -13,6 +14,7 @@ set(TEST_TARGETS
     test_mesh_builder
     test_path
     test_blend
+    test_advanced
 )
 
 foreach(target ${TEST_TARGETS})

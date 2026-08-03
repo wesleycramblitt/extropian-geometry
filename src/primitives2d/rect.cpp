@@ -42,6 +42,11 @@ MeshData generate_rect_mesh(const RectangleGeometry& geom)
     v2.uv = {1.0f, 1.0f, 0.0f};
     v3.uv = {0.0f, 1.0f, 0.0f};
 
+    v0.color = geom.color;
+    v1.color = geom.color;
+    v2.color = geom.color;
+    v3.color = geom.color;
+
     const auto a = builder.add_vertex(v0);
     const auto b = builder.add_vertex(v1);
     const auto c = builder.add_vertex(v2);

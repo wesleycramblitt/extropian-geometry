@@ -34,6 +34,7 @@ MeshData generate_arc_mesh(const ArcGeometry& geom)
     cv.position = {0.0f, 0.0f, 0.0f};
     cv.normal   = {0.0f, 0.0f, 1.0f};
     cv.uv       = {0.5f, 0.5f, 0.0f};
+    cv.color    = geom.color;
     const uint32_t centerIdx = builder.add_vertex(cv);
 
     // Perimeter vertices from startAngle to endAngle
@@ -65,6 +66,7 @@ MeshData generate_arc_mesh(const ArcGeometry& geom)
             (sy + 1.0f) * 0.5f,
             0.0f
         };
+        v.color = geom.color;
 
         if (i == 0)
         {

@@ -52,14 +52,24 @@ struct BlendPrimitive
     uint32_t id = 0;
 };
 
+// ── Blend operation ──
+
+enum class BlendOp
+{
+    Union,       // smooth-min of all primitive SDFs (default)
+    Subtract,    // first primitive minus all others (max(a, -b))
+    Intersect,   // intersection of all primitives (max of all SDFs)
+};
+
 // ── Blend Geometry Descriptor ──
 
 struct BlendGeometry
 {
     std::vector<BlendPrimitive> primitives;
 
-    float blendRadius    = 0.15f;  // smooth-min blend radius (0 = sharp CSG union)
-    float cellSize       = 0.05f;  // marching cubes voxel edge length
+    BlendOp op          = BlendOp::Union;
+    float blendRadius   = 0.15f;  // smooth-min blend radius (ignored for Subtract/Intersect)
+    float cellSize      = 0.05f;  // marching cubes voxel edge length
     bool  generateNormals = true;  // compute normals from SDF gradient
 };
 

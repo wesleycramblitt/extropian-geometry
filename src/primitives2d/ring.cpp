@@ -48,6 +48,7 @@ MeshData generate_ring_mesh(const RingGeometry& geom)
         ov.position = {outerR * c, outerR * s, 0.0f};
         ov.normal   = {0.0f, 0.0f, 1.0f};
         ov.uv       = {(c + 1.0f) * 0.5f, (s + 1.0f) * 0.5f, 0.0f};
+        ov.color    = geom.color;
         outerIndices.push_back(builder.add_vertex(ov));
 
         // Inner vertex
@@ -55,6 +56,7 @@ MeshData generate_ring_mesh(const RingGeometry& geom)
         iv.position = {innerR * c, innerR * s, 0.0f};
         iv.normal   = {0.0f, 0.0f, 1.0f};
         iv.uv       = {(c + 1.0f) * 0.5f, (s + 1.0f) * 0.5f, 0.0f};
+        iv.color    = geom.color;
         innerIndices.push_back(builder.add_vertex(iv));
     }
 

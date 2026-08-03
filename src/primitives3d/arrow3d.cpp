@@ -97,6 +97,7 @@ MeshData generate_arrow3d_mesh(const Arrow3DGeometry& geometry)
             v.normal   = radial;
             v.uv       = {static_cast<float>(i) / static_cast<float>(slices), shaftLen / totalLen, 0.0f};
             v.tangent  = tangent_id;
+            v.color    = geometry.color;
 
             vertices.push_back(v);
         }
@@ -142,6 +143,7 @@ MeshData generate_arrow3d_mesh(const Arrow3DGeometry& geometry)
             v.normal   = (radial * headLen + forward * headRadius).normalized();
             v.uv       = {static_cast<float>(i) / static_cast<float>(slices), shaftLen / totalLen, 0.0f};
             v.tangent  = tangent_id;
+            v.color    = geometry.color;
 
             vertices.push_back(v);
         }
@@ -154,6 +156,7 @@ MeshData generate_arrow3d_mesh(const Arrow3DGeometry& geometry)
             v.normal   = forward;
             v.uv       = {0.5f, 1.0f, 0.0f};
             v.tangent  = tangent_id;
+            v.color    = geometry.color;
             vertices.push_back(v);
         }
 

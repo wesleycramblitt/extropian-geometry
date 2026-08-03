@@ -65,6 +65,7 @@ MeshData generate_ellipsoid_mesh(const EllipsoidGeometry& geom)
                 0.0f
             };
             v.tangent = tangent_id;
+            v.color   = geom.color;
 
             vertices.push_back(v);
         }

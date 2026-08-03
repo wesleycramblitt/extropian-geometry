@@ -128,6 +128,7 @@ MeshData generate_rounded_rect_mesh(const RoundedRectangleGeometry& geom)
     cv.position = {0.0f, 0.0f, 0.0f};
     cv.normal   = {0.0f, 0.0f, 1.0f};
     cv.uv       = {0.5f, 0.5f, 0.0f};
+    cv.color    = geom.color;
     const uint32_t centerIdx = builder.add_vertex(cv);
 
     std::vector<uint32_t> permIndices;
@@ -142,6 +143,7 @@ MeshData generate_rounded_rect_mesh(const RoundedRectangleGeometry& geom)
             (p.y + hh) / geom.size.y,
             0.0f
         };
+        v.color = geom.color;
         permIndices.push_back(builder.add_vertex(v));
     }
 

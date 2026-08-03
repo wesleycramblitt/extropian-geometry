@@ -47,6 +47,11 @@ MeshData generate_grid_mesh(const GridGeometry& geom)
         v2.uv = {1.0f, v1v, 0.0f};
         v3.uv = {1.0f, v0v, 0.0f};
 
+        v0.color = geom.color;
+        v1.color = geom.color;
+        v2.color = geom.color;
+        v3.color = geom.color;
+
         const auto a = builder.add_vertex(v0);
         const auto b = builder.add_vertex(v1);
         const auto c = builder.add_vertex(v2);

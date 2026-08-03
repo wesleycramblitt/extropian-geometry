@@ -20,6 +20,7 @@ MeshData generate_circle_mesh(const CircleGeometry& geom)
     cv.position = {0.0f, 0.0f, 0.0f};
     cv.normal   = {0.0f, 0.0f, 1.0f};
     cv.uv       = {0.5f, 0.5f, 0.0f};
+    cv.color    = geom.color;
     const uint32_t centerIdx = builder.add_vertex(cv);
 
     // Perimeter vertices — CCW order starting from angle 0 (+X axis)
@@ -44,6 +45,7 @@ MeshData generate_circle_mesh(const CircleGeometry& geom)
             (std::sin(angle) + 1.0f) * 0.5f,
             0.0f
         };
+        v.color = geom.color;
         permIndices.push_back(builder.add_vertex(v));
     }
 

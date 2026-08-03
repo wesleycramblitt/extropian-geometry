@@ -56,6 +56,11 @@ MeshData generate_arrow_mesh(const ArrowGeometry& geom)
     sv2.uv = {shaftLen / len, 1.0f, 0.0f};
     sv3.uv = {shaftLen / len, 0.0f, 0.0f};
 
+    sv0.color = geom.color;
+    sv1.color = geom.color;
+    sv2.color = geom.color;
+    sv3.color = geom.color;
+
     const auto sa = builder.add_vertex(sv0);
     const auto sb = builder.add_vertex(sv1);
     const auto sc = builder.add_vertex(sv2);
@@ -79,6 +84,10 @@ MeshData generate_arrow_mesh(const ArrowGeometry& geom)
     hv0.uv = {1.0f, 0.5f, 0.0f};
     hv1.uv = {shaftLen / len, 0.0f, 0.0f};
     hv2.uv = {shaftLen / len, 1.0f, 0.0f};
+
+    hv0.color = geom.color;
+    hv1.color = geom.color;
+    hv2.color = geom.color;
 
     const auto ha = builder.add_vertex(hv0);
     const auto hb = builder.add_vertex(hv1);

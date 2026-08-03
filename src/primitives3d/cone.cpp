@@ -56,6 +56,7 @@ MeshData generate_cone_mesh(const ConeGeometry& geometry)
         vert.normal   = {nx, ny, nz};
         vert.uv       = {static_cast<float>(i) / static_cast<float>(slices), 0.0f, 0.0f};
         vert.tangent  = tangent_id;
+        vert.color    = geometry.color;
 
         vertices.push_back(vert);
     }
@@ -68,6 +69,7 @@ MeshData generate_cone_mesh(const ConeGeometry& geometry)
         vert.normal   = {0.0f, 1.0f, 0.0f};
         vert.uv       = {0.5f, 1.0f, 0.0f};
         vert.tangent  = tangent_id;
+        vert.color    = geometry.color;
         vertices.push_back(vert);
     }
 
@@ -89,6 +91,7 @@ MeshData generate_cone_mesh(const ConeGeometry& geometry)
             vert.normal   = {0.0f, -1.0f, 0.0f};
             vert.uv       = {0.5f, 0.5f, 0.0f};
             vert.tangent  = tangent_id;
+            vert.color    = geometry.color;
             vertices.push_back(vert);
         }
 
