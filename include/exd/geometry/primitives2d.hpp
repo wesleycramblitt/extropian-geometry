@@ -29,14 +29,14 @@ struct RoundedRectangleGeometry
 {
     math::Vec3f size = {1.0f, 1.0f, 0.0f};
     CornerRadii radii;
-    uint32_t cornerSegments = 16;
+    uint32_t cornerSegments = 32;
     math::Quat  color = {1.0f, 1.0f, 1.0f, 1.0f};
 };
 
 struct CircleGeometry
 {
     float radius = 1.0f;
-    uint32_t segments = 32;
+    uint32_t segments = 64;
     math::Quat color = {1.0f, 1.0f, 1.0f, 1.0f};
 };
 
@@ -44,7 +44,7 @@ struct EllipseGeometry
 {
     float radiusX = 1.0f;
     float radiusY = 0.5f;
-    uint32_t segments = 32;
+    uint32_t segments = 64;
     math::Quat color = {1.0f, 1.0f, 1.0f, 1.0f};
 };
 
@@ -53,7 +53,7 @@ struct ArcGeometry
     float radius = 1.0f;
     float startAngle = 0.0f;
     float endAngle = std::numbers::pi_v<float> * 1.5f;
-    uint32_t segments = 32;
+    uint32_t segments = 64;
     math::Quat color = {1.0f, 1.0f, 1.0f, 1.0f};
 };
 
@@ -61,7 +61,7 @@ struct RingGeometry
 {
     float outerRadius = 1.0f;
     float innerRadius = 0.5f;
-    uint32_t segments = 32;
+    uint32_t segments = 64;
     math::Quat color = {1.0f, 1.0f, 1.0f, 1.0f};
 };
 

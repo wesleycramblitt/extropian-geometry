@@ -66,14 +66,14 @@ TEST_CASE("rect: custom size produces correct bounds")
 
 TEST_CASE("circle: default produces triangle fan")
 {
-    CircleGeometry geom; // radius=1.0, segments=32
+    CircleGeometry geom; // radius=1.0, segments=64
     auto mesh = generate_circle_mesh(geom);
 
     CHECK(mesh.topology == PrimitiveTopology::Triangles);
-    // 1 center + 32 perimeter = 33 vertices
-    CHECK(mesh.vertices.size() == 33);
-    // 32 triangles × 3 = 96 indices
-    CHECK(mesh.indices.size() == 96);
+    // 1 center + 64 perimeter = 65 vertices
+    CHECK(mesh.vertices.size() == 65);
+    // 64 triangles × 3 = 192 indices
+    CHECK(mesh.indices.size() == 192);
 
     // Center vertex at origin
     CHECK(mesh.vertices[0].position.x == doctest::Approx(0.0f));
@@ -130,11 +130,11 @@ TEST_CASE("circle: minimum segments clamped to 3")
 
 TEST_CASE("ellipse: default produces triangle fan with elliptical shape")
 {
-    EllipseGeometry geom; // rx=1.0, ry=0.5, segs=32
+    EllipseGeometry geom; // rx=1.0, ry=0.5, segs=64
     auto mesh = generate_ellipse_mesh(geom);
 
-    CHECK(mesh.vertices.size() == 33); // 1 center + 32 perimeter
-    CHECK(mesh.indices.size() == 96);  // 32 * 3
+    CHECK(mesh.vertices.size() == 65); // 1 center + 64 perimeter
+    CHECK(mesh.indices.size() == 192);  // 64 * 3
 
     // Perimeter vertices form ellipse: (rx*cos(t), ry*sin(t))
     for (size_t i = 1; i < mesh.vertices.size(); ++i)
@@ -189,16 +189,16 @@ TEST_CASE("ellipse: custom radii and segment count")
 
 TEST_CASE("arc: default produces filled sector")
 {
-    ArcGeometry geom; // radius=1, start=0, end=1.5*pi (270°), segs=32
+    ArcGeometry geom; // radius=1, start=0, end=1.5*pi (270°), segs=64
     auto mesh = generate_arc_mesh(geom);
 
     CHECK(mesh.topology == PrimitiveTopology::Triangles);
 
-    // sweep = 1.5*pi, fraction = 0.75, segs = 32*0.75 = 24
-    // 1 center + 25 perimeter = 26 vertices
-    CHECK(mesh.vertices.size() == 26);
-    // 24 triangles × 3 = 72 indices
-    CHECK(mesh.indices.size() == 72);
+    // sweep = 1.5*pi, fraction = 0.75, segs = 64*0.75 = 48
+    // 1 center + 49 perimeter = 50 vertices
+    CHECK(mesh.vertices.size() == 50);
+    // 48 triangles × 3 = 144 indices
+    CHECK(mesh.indices.size() == 144);
 
     // Center vertex at origin
     CHECK(mesh.vertices[0].position.x == doctest::Approx(0.0f));
@@ -283,20 +283,20 @@ TEST_CASE("arc: small segment count clamped to at least 1")
 
 TEST_CASE("ring: default produces annulus")
 {
-    RingGeometry geom; // outer=1.0, inner=0.5, segs=32
+    RingGeometry geom; // outer=1.0, inner=0.5, segs=64
     auto mesh = generate_ring_mesh(geom);
 
     CHECK(mesh.topology == PrimitiveTopology::Triangles);
-    // 2*segs vertices = 64
-    CHECK(mesh.vertices.size() == 64);
-    // segs quads × 6 indices = 192
-    CHECK(mesh.indices.size() == 192);
+    // 2*segs vertices = 128
+    CHECK(mesh.vertices.size() == 128);
+    // segs quads × 6 indices = 384
+    CHECK(mesh.indices.size() == 384);
 
     // All on XY plane
     for (const auto& v : mesh.vertices)
         CHECK(v.position.z == doctest::Approx(0.0f));
 
-    // Outer vertices at radius 1.0, inner at 0.5
+    // Outer vertex at radius 1.0, inner at 0.5
     size_t outerCount = 0, innerCount = 0;
     for (const auto& v : mesh.vertices)
     {
@@ -306,8 +306,8 @@ TEST_CASE("ring: default produces annulus")
         else if (dist == doctest::Approx(0.5f))
             ++innerCount;
     }
-    CHECK(outerCount == 32);
-    CHECK(innerCount == 32);
+    CHECK(outerCount == 64);
+    CHECK(innerCount == 64);
 }
 
 TEST_CASE("ring: inner >= outer is handled by swapping")
@@ -318,7 +318,7 @@ TEST_CASE("ring: inner >= outer is handled by swapping")
     auto mesh = generate_ring_mesh(geom);
     // Should swap so inner=1.0, outer=1.5 → still valid mesh
     CHECK(!mesh.vertices.empty());
-    CHECK(mesh.vertices.size() == 64);
+    CHECK(mesh.vertices.size() == 128);
 }
 
 TEST_CASE("ring: minimum segments clamped to 3")
@@ -542,7 +542,7 @@ TEST_CASE("grid: single row and column")
 
 TEST_CASE("rounded_rect: default produces valid mesh")
 {
-    RoundedRectangleGeometry geom; // size=(1,1,0), all corners=0, segs=16
+    RoundedRectangleGeometry geom; // size=(1,1,0), all corners=0, segs=32
     auto mesh = generate_rounded_rect_mesh(geom);
 
     CHECK(mesh.topology == PrimitiveTopology::Triangles);

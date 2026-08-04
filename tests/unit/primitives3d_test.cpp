@@ -9,14 +9,14 @@ using namespace exd::geometry;
 
 TEST_CASE("sphere: default UV sphere")
 {
-    SphereGeometry geom; // r=0.5, lat=16, lon=32
+    SphereGeometry geom; // r=0.5, lat=32, lon=64
     auto mesh = generate_sphere_mesh(geom);
 
     CHECK(mesh.topology == PrimitiveTopology::Triangles);
-    // (16+1) * (32+1) = 17 * 33 = 561 vertices
-    CHECK(mesh.vertices.size() == 561);
-    // 16 * 32 * 6 = 3072 indices
-    CHECK(mesh.indices.size() == 3072);
+    // (32+1) * (64+1) = 33 * 65 = 2145 vertices
+    CHECK(mesh.vertices.size() == 2145);
+    // 32 * 64 * 6 = 12288 indices
+    CHECK(mesh.indices.size() == 12288);
 
     // All vertices at distance radius from origin
     for (const auto& v : mesh.vertices)
@@ -124,13 +124,13 @@ TEST_CASE("sphere: icosphere with zero subdivisions matches base icosahedron")
 
 TEST_CASE("ellipsoid: default prolate ellipsoid")
 {
-    EllipsoidGeometry geom; // radii=(0.5, 1.0, 0.5), lat=16, lon=32
+    EllipsoidGeometry geom; // radii=(0.5, 1.0, 0.5), lat=32, lon=64
     auto mesh = generate_ellipsoid_mesh(geom);
 
     CHECK(mesh.topology == PrimitiveTopology::Triangles);
-    // (16+1) * (32+1) = 561 vertices, same layout as UV sphere
-    CHECK(mesh.vertices.size() == 561);
-    CHECK(mesh.indices.size() == 3072);
+    // (32+1) * (64+1) = 2145 vertices, same layout as UV sphere
+    CHECK(mesh.vertices.size() == 2145);
+    CHECK(mesh.indices.size() == 12288);
 
     // All vertices should satisfy ellipsoid equation within tolerance
     for (const auto& v : mesh.vertices)
@@ -255,17 +255,17 @@ TEST_CASE("box: each face has correct normal")
 
 TEST_CASE("cylinder: default capped cylinder")
 {
-    CylinderGeometry geom; // r=0.5, h=1.0, slices=32, capped=true
+    CylinderGeometry geom; // r=0.5, h=1.0, slices=64, capped=true
     auto mesh = generate_cylinder_mesh(geom);
 
     CHECK(mesh.topology == PrimitiveTopology::Triangles);
     CHECK(!mesh.vertices.empty());
 
-    // Side: 2*(32+1) = 66, Caps: 2 centers = 68 total
-    CHECK(mesh.vertices.size() == 68);
+    // Side: 2*(64+1) = 130, Caps: 2 centers = 132 total
+    CHECK(mesh.vertices.size() == 132);
 
-    // Side indices: 32*6 = 192, Cap indices: 32*3*2 = 192, total = 384
-    CHECK(mesh.indices.size() == 384);
+    // Side indices: 64*6 = 384, Cap indices: 64*3*2 = 384, total = 768
+    CHECK(mesh.indices.size() == 768);
 
     // Side vertices at correct Y positions
     for (const auto& v : mesh.vertices)
@@ -489,12 +489,12 @@ TEST_CASE("icosahedron: custom radius scales vertices")
 
 TEST_CASE("torus: default torus produces valid mesh")
 {
-    TorusGeometry geom; // majorR=1.0, minorR=0.3, majorSegs=32, minorSegs=16
+    TorusGeometry geom; // majorR=1.0, minorR=0.3, majorSegs=64, minorSegs=32
     auto mesh = generate_torus_mesh(geom);
 
     CHECK(mesh.topology == PrimitiveTopology::Triangles);
-    CHECK(mesh.vertices.size() == (32 + 1) * (16 + 1)); // 33*17 = 561
-    CHECK(mesh.indices.size() == 32 * 16 * 6);          // 3072
+    CHECK(mesh.vertices.size() == (64 + 1) * (32 + 1)); // 65*33 = 2145
+    CHECK(mesh.indices.size() == 64 * 32 * 6);          // 12288
 }
 
 TEST_CASE("torus: all vertices at expected distance from tube center")
@@ -545,7 +545,7 @@ TEST_CASE("torus: zero minor radius returns empty")
 
 TEST_CASE("cone: default capped cone")
 {
-    ConeGeometry geom; // r=0.5, h=1.0, slices=32, capped=true
+    ConeGeometry geom; // r=0.5, h=1.0, slices=64, capped=true
     auto mesh = generate_cone_mesh(geom);
 
     CHECK(mesh.topology == PrimitiveTopology::Triangles);
@@ -628,7 +628,7 @@ TEST_CASE("cone: bounds cover expected volume")
 
 TEST_CASE("disk: filled disk (innerRadius=0)")
 {
-    DiskGeometry geom; // outerR=1.0, innerR=0.0, segs=32
+    DiskGeometry geom; // outerR=1.0, innerR=0.0, segs=64
     auto mesh = generate_disk_mesh(geom);
 
     CHECK(mesh.topology == PrimitiveTopology::Triangles);
@@ -790,7 +790,7 @@ TEST_CASE("tube: vertex count is correct")
 
 TEST_CASE("arrow3d: default arrow")
 {
-    Arrow3DGeometry geom; // start=(0,0,0), end=(0,1,0), headR=0.15, headL=0.3, shaftR=0.05, slices=16
+    Arrow3DGeometry geom; // start=(0,0,0), end=(0,1,0), headR=0.15, headL=0.3, shaftR=0.05, slices=32
     auto mesh = generate_arrow3d_mesh(geom);
 
     CHECK(mesh.topology == PrimitiveTopology::Triangles);
@@ -943,7 +943,7 @@ TEST_CASE("sphere: both flags false still produces mesh")
     auto mesh = generate_sphere_mesh(geom);
 
     CHECK(!mesh.vertices.empty());
-    CHECK(mesh.vertices.size() == 561); // same vertex count
+    CHECK(mesh.vertices.size() == 2145); // same vertex count
 }
 
 // ── Cone: uncapped ──────────────────────────────────────────────────────────
@@ -956,10 +956,10 @@ TEST_CASE("cone: uncapped cone has no cap vertices")
 
     CHECK(!mesh.vertices.empty());
 
-    // Uncapped: only side vertices (slices+1 ring + 1 tip) = 34
-    // (slices clamped to 3 min, but default is 32)
-    CHECK(mesh.vertices.size() == 34);  // 33 ring + 1 tip
-    CHECK(mesh.indices.size() == 96);   // 32 * 3 (no cap indices)
+    // Uncapped: only side vertices (slices+1 ring + 1 tip) = 66
+    // (slices clamped to 3 min, but default is 64)
+    CHECK(mesh.vertices.size() == 66);  // 65 ring + 1 tip
+    CHECK(mesh.indices.size() == 192);   // 64 * 3 (no cap indices)
 
     // No vertex should have a -Y normal (that would be cap center)
     for (const auto& v : mesh.vertices)
@@ -1063,10 +1063,10 @@ TEST_CASE("arrow3d: shaft-only (zero head radius) produces cylinder")
     CHECK(!mesh.indices.empty());
 
     // Should only have shaft vertices (2 rings) — no head
-    // 2 * (16+1) = 34 vertices for shaft
-    CHECK(mesh.vertices.size() == 34);
-    // 16 * 6 = 96 indices for shaft
-    CHECK(mesh.indices.size() == 96);
+    // 2 * (32+1) = 66 vertices for shaft
+    CHECK(mesh.vertices.size() == 66);
+    // 32 * 6 = 192 indices for shaft
+    CHECK(mesh.indices.size() == 192);
 }
 
 TEST_CASE("arrow3d: head-only (zero shaft radius) produces cone")
@@ -1080,8 +1080,8 @@ TEST_CASE("arrow3d: head-only (zero shaft radius) produces cone")
     CHECK(!mesh.vertices.empty());
     CHECK(!mesh.indices.empty());
 
-    // Head only: 1 ring + 1 tip = (16+1) + 1 = 18 vertices
-    CHECK(mesh.vertices.size() == 18);
+    // Head only: 1 ring + 1 tip = (32+1) + 1 = 34 vertices
+    CHECK(mesh.vertices.size() == 34);
 }
 
 // ── Axes: shaft-only ────────────────────────────────────────────────────────

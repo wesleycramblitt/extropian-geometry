@@ -19,8 +19,8 @@ enum class SphereConstruction
 struct SphereGeometry
 {
     float radius = 0.5f;
-    uint32_t latitudeSegments = 16;
-    uint32_t longitudeSegments = 32;
+    uint32_t latitudeSegments = 32;
+    uint32_t longitudeSegments = 64;
     SphereConstruction construction = SphereConstruction::Uv;
     bool generateNormals = true;
     bool generateTexcoords = true;
@@ -44,8 +44,8 @@ struct PlaneGeometry
 struct EllipsoidGeometry
 {
     math::Vec3f radii = {0.5f, 1.0f, 0.5f};
-    uint32_t latitudeSegments = 16;
-    uint32_t longitudeSegments = 32;
+    uint32_t latitudeSegments = 32;
+    uint32_t longitudeSegments = 64;
     math::Quat  color = {1.0f, 1.0f, 1.0f, 1.0f};
 };
 
@@ -53,7 +53,7 @@ struct CylinderGeometry
 {
     float radius = 0.5f;
     float height = 1.0f;
-    uint32_t slices = 32;
+    uint32_t slices = 64;
     bool capped = true;
     math::Quat color = {1.0f, 1.0f, 1.0f, 1.0f};
 };
@@ -62,7 +62,7 @@ struct ConeGeometry
 {
     float radius = 0.5f;
     float height = 1.0f;
-    uint32_t slices = 32;
+    uint32_t slices = 64;
     bool capped = true;
     math::Quat color = {1.0f, 1.0f, 1.0f, 1.0f};
 };
@@ -71,8 +71,8 @@ struct CapsuleGeometry
 {
     float radius = 0.25f;
     float height = 1.0f;
-    uint32_t slices = 32;
-    uint32_t stacks = 8;
+    uint32_t slices = 64;
+    uint32_t stacks = 16;
     math::Quat color = {1.0f, 1.0f, 1.0f, 1.0f};
 };
 
@@ -80,8 +80,8 @@ struct TorusGeometry
 {
     float majorRadius = 1.0f;
     float minorRadius = 0.3f;
-    uint32_t majorSegments = 32;
-    uint32_t minorSegments = 16;
+    uint32_t majorSegments = 64;
+    uint32_t minorSegments = 32;
     math::Quat color = {1.0f, 1.0f, 1.0f, 1.0f};
 };
 
@@ -89,7 +89,7 @@ struct TubeGeometry
 {
     std::vector<math::Vec3f> path;
     float radius = 0.1f;
-    uint32_t radialSegments = 16;
+    uint32_t radialSegments = 32;
     bool capped = true;
     math::Quat color = {1.0f, 1.0f, 1.0f, 1.0f};
 };
@@ -98,7 +98,7 @@ struct DiskGeometry
 {
     float outerRadius = 1.0f;
     float innerRadius = 0.0f;
-    uint32_t segments = 32;
+    uint32_t segments = 64;
     math::Quat color = {1.0f, 1.0f, 1.0f, 1.0f};
 };
 
@@ -109,7 +109,7 @@ struct Arrow3DGeometry
     float headRadius  = 0.15f;
     float headLength  = 0.3f;
     float shaftRadius = 0.05f;
-    uint32_t slices = 16;
+    uint32_t slices = 32;
     math::Quat color = {1.0f, 1.0f, 1.0f, 1.0f};
 };
 
