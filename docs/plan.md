@@ -96,22 +96,15 @@ Geometry is a **leaf dependency**. `extropian-ui` depends on it. The WebGL canva
 
 ## 5. Types
 
-```cpp
-struct Vertex {
-    Vec3f position;
-    Vec3f normal;
-    Vec3f uv;
-    Vec4f tangent;
-    Vec4f color;
-};
+Mesh types are **not defined here** — they live in **extropian-core** so they are shared
+across geometry, render, and every other consumer.
 
-struct MeshData {
-    std::vector<Vertex> vertices;
-    std::vector<uint32_t> indices;
-    PrimitiveTopology topology;  // Triangles, Lines, Points
-    Bounds bounds;
-};
-```
+- `exd::core::Vertex`, `exd::core::MeshData`, `exd::core::PrimitiveTopology`, `exd::core::Bounds`
+  → `extropian-core/include/exd/core/mesh_types.hpp`
+- Geometry re-exports them as `exd::geometry::Vertex`, `exd::geometry::MeshData`, etc.
+  (see `include/exd/geometry/types.hpp`) for source compatibility.
+- Render re-exports them as `exd::render::Vertex`, `exd::render::Mesh`, etc.
+  (see `extropian-render/include/exd/render/graphics/mesh.hpp`).
 
 ## 6. Platform & Compilation
 
