@@ -51,12 +51,37 @@ MeshData generate_extrusion_mesh(const ExtrusionGeometry& geometry)
         builder.add_triangle(f1, b0, b1);
     }
 
-    // Cap faces
+    // Cap faces — use a dedicated center vertex (at origin in XY) so the
+    // triangle fan covers the shape cleanly without degenerate perimeter-to-perimeter
+    // triangles. Both caps use the same winding formula: (center, next, current)
+    // gives CCW winding in the XY plane, which is front-facing from the cap's
+    // normal direction.
     if (geometry.capped) {
-        for (size_t i = 1; i < n - 1; ++i) {
-            builder.add_triangle(0, static_cast<uint32_t>(i), static_cast<uint32_t>(i + 1));
-            builder.add_triangle(static_cast<uint32_t>(n),
-                                 static_cast<uint32_t>(n + i + 1),
+        // Front cap center
+        Vertex fc;
+        fc.position = {0.0f, 0.0f, -halfD};
+        fc.normal   = {0.0f, 0.0f, -1.0f};
+        fc.color    = geometry.color;
+        const uint32_t frontCenter = builder.add_vertex(fc);
+
+        // Back cap center
+        Vertex bc;
+        bc.position = {0.0f, 0.0f, halfD};
+        bc.normal   = {0.0f, 0.0f, 1.0f};
+        bc.color    = geometry.color;
+        const uint32_t backCenter = builder.add_vertex(bc);
+
+        for (size_t i = 0; i < n; ++i) {
+            const size_t j = (i + 1) % n;
+
+            // Front cap: facing -Z, CCW when viewed from -Z
+            builder.add_triangle(frontCenter,
+                                 static_cast<uint32_t>(j),
+                                 static_cast<uint32_t>(i));
+
+            // Back cap: facing +Z, CCW when viewed from +Z
+            builder.add_triangle(backCenter,
+                                 static_cast<uint32_t>(n + j),
                                  static_cast<uint32_t>(n + i));
         }
     }
