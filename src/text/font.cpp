@@ -40,6 +40,7 @@ struct CachedMetrics {
     float advance;
     float width;
     float height;
+    float bearingY;   // bbox yMin — negative for descenders (glyph extends below baseline)
 };
 
 // ── Impl ──
@@ -292,10 +293,17 @@ Bounds FontAtlas::rasterize_glyph(FontId font, GlyphId glyph, float fontSize) {
 
     // Cache metrics
     float advance = static_cast<float>(face->glyph->advance.x) / 64.0f;
+    float bearingY = 0.0f;
+    {
+        FT_BBox bbox;
+        FT_Outline_Get_CBox(&face->glyph->outline, &bbox);
+        bearingY = static_cast<float>(bbox.yMin) / 64.0f;
+    }
     CachedMetrics metrics{
         advance,
         static_cast<float>(bw),
-        static_cast<float>(bh)
+        static_cast<float>(bh),
+        bearingY
     };
     impl_->metricsCache[key] = metrics;
 
@@ -338,7 +346,7 @@ bool FontAtlas::get_glyph_metrics(FontId font, GlyphId glyph, float fontSize,
     auto cacheIt = impl_->metricsCache.find(key);
     if (cacheIt != impl_->metricsCache.end()) {
         outAdvance = cacheIt->second.advance;
-        outSize = {cacheIt->second.width, cacheIt->second.height, 0.0f};
+        outSize = {cacheIt->second.width, cacheIt->second.height, cacheIt->second.bearingY};
         return true;
     }
 
@@ -364,6 +372,7 @@ bool FontAtlas::get_glyph_metrics(FontId font, GlyphId glyph, float fontSize,
     FT_Outline_Get_CBox(&slot->outline, &bbox);
     float w = static_cast<float>(bbox.xMax - bbox.xMin) / 64.0f;
     float h = static_cast<float>(bbox.yMax - bbox.yMin) / 64.0f;
+    float bearingY = static_cast<float>(bbox.yMin) / 64.0f;  // negative for descenders
 
     // If outline is empty (e.g., bitmap-only glyphs), try bitmap dimensions
     if (w <= 0.0f || h <= 0.0f) {
@@ -372,13 +381,16 @@ bool FontAtlas::get_glyph_metrics(FontId font, GlyphId glyph, float fontSize,
         if (err == FT_Err_Ok) {
             w = static_cast<float>(slot->bitmap.width);
             h = static_cast<float>(slot->bitmap.rows);
+            // bitmap_top is the offset from baseline to top of bitmap;
+            // bearing = -(bitmap_top - rows) = rows - bitmap_top
+            bearingY = static_cast<float>(slot->bitmap.rows - slot->bitmap_top);
         }
     }
 
-    outSize = {w, h, 0.0f};
+    outSize = {w, h, bearingY};
 
     // Cache metrics
-    impl_->metricsCache[key] = {outAdvance, w, h};
+    impl_->metricsCache[key] = {outAdvance, w, h, bearingY};
 
     return true;
 }

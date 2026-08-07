@@ -9,7 +9,7 @@ MeshData generate_glyph_mesh(const GlyphPlacement& glyph, math::Quat color) {
     builder.reserve(4, 6);
 
     float x = glyph.position.x;
-    float y = glyph.position.y;
+    float y = glyph.position.y + glyph.size.z;  // offset by descender bearing
     float w = glyph.size.x;
     float h = glyph.size.y;
 
@@ -52,8 +52,12 @@ MeshData generate_text_mesh(const ShapedText& shaped, FontAtlas& atlas, math::Qu
             continue;
         }
 
+        // gp.position.y is the baseline (0 for horizontal text).
+        // gp.size.z is the yMin bearing from the bbox (negative for descenders).
+        // Offset the quad downward by the bearing so the glyph content
+        // (including descenders) is fully covered.
         float x = gp.position.x;
-        float y = gp.position.y;
+        float y = gp.position.y + gp.size.z;
         float w = gp.size.x;
         float h = gp.size.y;
 
