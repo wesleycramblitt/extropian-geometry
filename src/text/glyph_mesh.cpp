@@ -70,11 +70,12 @@ MeshData generate_text_mesh(const ShapedText& shaped, FontAtlas& atlas, math::Qu
         // The atlas stores glyphs with v increasing downward (standard texture coords).
         // We map atlas bottom (v1) to glyph bottom (y) and atlas top (v0) to glyph top (y+h),
         // so the glyph renders right-side-up without needing a Y-axis flip in the world transform.
+        const auto glyphColor = gp.hasColorOverride ? gp.color : color;
         Vertex va, vb, vc, vd;
-        va.position = {x,     y,     0.0f}; va.uv = {u0, v1, 0.0f}; va.color = color;
-        vb.position = {x + w, y,     0.0f}; vb.uv = {u1, v1, 0.0f}; vb.color = color;
-        vc.position = {x + w, y + h, 0.0f}; vc.uv = {u1, v0, 0.0f}; vc.color = color;
-        vd.position = {x,     y + h, 0.0f}; vd.uv = {u0, v0, 0.0f}; vd.color = color;
+        va.position = {x,     y,     0.0f}; va.uv = {u0, v1, 0.0f}; va.color = glyphColor;
+        vb.position = {x + w, y,     0.0f}; vb.uv = {u1, v1, 0.0f}; vb.color = glyphColor;
+        vc.position = {x + w, y + h, 0.0f}; vc.uv = {u1, v0, 0.0f}; vc.color = glyphColor;
+        vd.position = {x,     y + h, 0.0f}; vd.uv = {u0, v0, 0.0f}; vd.color = glyphColor;
 
         va.normal = vb.normal = vc.normal = vd.normal = {0.0f, 0.0f, 1.0f};
 

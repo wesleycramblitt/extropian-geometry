@@ -11,10 +11,15 @@ project(extropian-geometry VERSION 0.1.0 LANGUAGES CXX
 include(FetchContent)
 
 if(NOT TARGET exd::core)
-    FetchContent_Declare(exd-core
-        GIT_REPOSITORY https://github.com/wesleycramblitt/extropian-core.git
-        GIT_TAG main
-    )
+    if(DEFINED EXD_CORE_DIR)
+        FetchContent_Declare(exd-core SOURCE_DIR "${EXD_CORE_DIR}")
+    else()
+        FetchContent_Declare(exd-core
+            GIT_REPOSITORY https://github.com/wesleycramblitt/extropian-core.git
+            GIT_TAG main
+        )
+    endif()
+    set(EXT_CORE_BUILD_TESTS OFF CACHE BOOL "" FORCE)
     FetchContent_MakeAvailable(exd-core)
 endif()
 
@@ -91,7 +96,10 @@ if(ENABLE_TEXT)
 endif()
 
 # ── Demo (optional, links to extropian-render) ──
-add_subdirectory(demo)
+option(BUILD_DEMO "Build geometry 3D viewer demo" OFF)
+if(BUILD_DEMO)
+    add_subdirectory(demo)
+endif()
 
 # ── Tests ──
 option(BUILD_TESTS "Build Geometry tests" OFF)

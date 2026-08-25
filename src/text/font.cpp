@@ -8,12 +8,55 @@
 #include <hb-ft.h>
 
 #include <algorithm>
+#include <array>
+#include <cmath>
 #include <cstring>
 #include <filesystem>
 #include <unordered_map>
 #include <vector>
 
 namespace exd::geometry {
+namespace {
+
+// Inter-glyph gutter. GL_LINEAR sampling blends up to half a texel across a
+// UV boundary, so a bare 1px gap lets a thin glyph (e.g. capital "I", a few
+// texels wide) pick up its neighbor's opaque texel or the fully transparent
+// gutter across most of its own width, washing it out.
+constexpr int kGlyphPadding = 2;
+
+// A small opaque block reserved once at atlas construction, at a fixed
+// location normal glyph packing never reaches (packing starts to its
+// right). Solid-fill geometry that gets merged into an otherwise
+// atlas-textured mesh — e.g. a math fraction bar sharing a draw call with
+// its glyph quads — samples this instead of stretching UV (0,0)-(1,1)
+// across whatever happens to be packed there, which is usually mostly
+// transparent gutter and renders as an invisible hairline.
+constexpr int kSolidPatchSize = 4;
+
+// Coverage->alpha is stored and blended linearly, but a partial-coverage
+// pixel over a dark background reads as much fainter than the same coverage
+// over a light one — human contrast sensitivity is roughly logarithmic, not
+// linear in the underlying light. A glyph that's mostly full-coverage
+// pixels (most letters have a wide flat stroke interior) still reads at
+// full weight; a glyph that's almost entirely partial-coverage edge (a
+// single stem like capital "I", with essentially no flat interior) reads
+// disproportionately faint. Boosting the mid-range before it ever reaches
+// the texture compensates without touching blend state or shaders, and
+// leaves fully-covered and fully-empty texels (0 and 255) untouched.
+uint8_t gamma_boost_alpha(uint8_t alpha) {
+    static const std::array<uint8_t, 256> table = [] {
+        std::array<uint8_t, 256> t{};
+        for (int i = 0; i < 256; ++i) {
+            const float coverage = static_cast<float>(i) / 255.0f;
+            const float boosted = std::pow(coverage, 1.0f / 1.4f);
+            t[i] = static_cast<uint8_t>(std::clamp(boosted * 255.0f, 0.0f, 255.0f));
+        }
+        return t;
+    }();
+    return table[alpha];
+}
+
+} // namespace
 
 // ── Cache key types ──
 
@@ -58,6 +101,9 @@ struct FontAtlas::Impl {
     int cursorY = 0;
     int rowMaxHeight = 0;
 
+    // UV of the reserved opaque white patch — see kSolidPatchSize above.
+    math::Vec3f solidUv{};
+
     // Glyph rect cache
     std::unordered_map<GlyphCacheKey, Bounds, GlyphCacheKeyHash> glyphCache;
 
@@ -74,6 +120,23 @@ struct FontAtlas::Impl {
         if (err != FT_Err_Ok) {
             ftLibrary = nullptr;
         }
+
+        // Reserve the solid white patch before any glyph packing starts, so
+        // rasterize_glyph's cursor never overwrites it.
+        const int patch = std::min({kSolidPatchSize, width, height});
+        for (int y = 0; y < patch; ++y) {
+            for (int x = 0; x < patch; ++x) {
+                const int idx = (y * width + x) * 4;
+                pixels[idx + 0] = 255;
+                pixels[idx + 1] = 255;
+                pixels[idx + 2] = 255;
+                pixels[idx + 3] = 255;
+            }
+        }
+        solidUv = {(patch * 0.5f) / static_cast<float>(width),
+                   (patch * 0.5f) / static_cast<float>(height), 0.0f};
+        cursorX = patch + kGlyphPadding;
+        rowMaxHeight = patch;
     }
 
     ~Impl() {
@@ -93,6 +156,7 @@ struct FontAtlas::Impl {
           cursorX(other.cursorX),
           cursorY(other.cursorY),
           rowMaxHeight(other.rowMaxHeight),
+          solidUv(other.solidUv),
           glyphCache(std::move(other.glyphCache)),
           metricsCache(std::move(other.metricsCache)),
           fontSearchPaths(std::move(other.fontSearchPaths))
@@ -123,6 +187,7 @@ struct FontAtlas::Impl {
             cursorX = other.cursorX;
             cursorY = other.cursorY;
             rowMaxHeight = other.rowMaxHeight;
+            solidUv = other.solidUv;
             glyphCache = std::move(other.glyphCache);
             metricsCache = std::move(other.metricsCache);
             fontSearchPaths = std::move(other.fontSearchPaths);
@@ -144,6 +209,8 @@ struct FontAtlas::Impl {
 FontAtlas::FontAtlas(int atlasWidth, int atlasHeight)
     : impl_(std::make_unique<Impl>(atlasWidth, atlasHeight))
 {
+    // Initialize default font paths including bundled fonts
+    initialize_default_paths();
 }
 
 FontAtlas::~FontAtlas() = default;
@@ -184,6 +251,7 @@ FontId FontAtlas::load_default(DefaultFont which) {
     // File name patterns to search for each default font category
     struct Pattern { DefaultFont kind; const char* name; };
     static const Pattern kPatterns[] = {
+        {DefaultFont::Sans,  "Inter-Regular.ttf"},
         {DefaultFont::Sans,  "DejaVuSans.ttf"},
         {DefaultFont::Sans,  "LiberationSans-Regular.ttf"},
         {DefaultFont::Sans,  "NotoSans-Regular.ttf"},
@@ -253,7 +321,7 @@ Bounds FontAtlas::rasterize_glyph(FontId font, GlyphId glyph, float fontSize) {
     // Check if glyph fits on current row
     if (impl_->cursorX + bw > impl_->width) {
         // Advance to next row
-        impl_->cursorY += impl_->rowMaxHeight;
+        impl_->cursorY += impl_->rowMaxHeight + kGlyphPadding;
         impl_->cursorX = 0;
         impl_->rowMaxHeight = 0;
     }
@@ -264,13 +332,32 @@ Bounds FontAtlas::rasterize_glyph(FontId font, GlyphId glyph, float fontSize) {
         return zeroRect;
     }
 
-    // Copy bitmap into atlas (grayscale -> RGBA with white color)
+    // Copy bitmap into atlas (grayscale -> RGBA with white color), then
+    // extend a 1px clamped-edge border into this glyph's own padding
+    // gutter. GL_LINEAR sampling exactly at the UV rect boundary reaches up
+    // to 0.5 texel past it; without this, that reach lands on fully
+    // transparent gutter and blends every edge toward zero alpha. For a
+    // wide glyph that is an imperceptible sliver, but a stroke as thin as
+    // capital "I" is little else BUT edge, so the whole glyph reads as
+    // faint/washed out. Duplicating the true edge alpha into the 1px border
+    // instead means that boundary sample blends with a copy of the glyph's
+    // own edge — full-size UVs, no inset needed, no crop, no fade. (An
+    // earlier version fixed the same bleed by insetting the UV rect half a
+    // texel on every side instead; that avoided the neighbor blend too, but
+    // it also uniformly cropped ~5% off every glyph's own height/width.)
     int pitch = static_cast<int>(bitmap.pitch);
-    for (int y = 0; y < bh; ++y) {
-        for (int x = 0; x < bw; ++x) {
-            int srcIdx = y * pitch + x;
-            int dstIdx = ((impl_->cursorY + y) * impl_->width + (impl_->cursorX + x)) * 4;
-            uint8_t alpha = bitmap.buffer[srcIdx];
+    constexpr int kEdgeExtend = 1;
+    for (int y = -kEdgeExtend; y < bh + kEdgeExtend; ++y) {
+        const int srcY = std::clamp(y, 0, bh - 1);
+        const int destY = impl_->cursorY + y;
+        if (destY < 0 || destY >= impl_->height) continue;
+        for (int x = -kEdgeExtend; x < bw + kEdgeExtend; ++x) {
+            const int srcX = std::clamp(x, 0, bw - 1);
+            const int destX = impl_->cursorX + x;
+            if (destX < 0 || destX >= impl_->width) continue;
+            const int srcIdx = srcY * pitch + srcX;
+            const int dstIdx = (destY * impl_->width + destX) * 4;
+            uint8_t alpha = gamma_boost_alpha(bitmap.buffer[srcIdx]);
             impl_->pixels[dstIdx + 0] = 255; // R
             impl_->pixels[dstIdx + 1] = 255; // G
             impl_->pixels[dstIdx + 2] = 255; // B
@@ -278,7 +365,10 @@ Bounds FontAtlas::rasterize_glyph(FontId font, GlyphId glyph, float fontSize) {
         }
     }
 
-    // Compute normalized UV rect
+    // Compute normalized UV rect over the glyph's exact rasterized bounds.
+    // kGlyphPadding (2px) keeps the 1px clamped border above, plus the
+    // 0.5-texel bilinear reach past it, safely inside the gutter and away
+    // from a neighboring glyph.
     Bounds rect;
     rect.min.x = static_cast<float>(impl_->cursorX) / static_cast<float>(impl_->width);
     rect.min.y = static_cast<float>(impl_->cursorY) / static_cast<float>(impl_->height);
@@ -288,7 +378,7 @@ Bounds FontAtlas::rasterize_glyph(FontId font, GlyphId glyph, float fontSize) {
     rect.max.z = 0.0f;
 
     // Update cursor
-    impl_->cursorX += bw + 1; // 1px padding
+    impl_->cursorX += bw + kGlyphPadding;
     impl_->rowMaxHeight = std::max(impl_->rowMaxHeight, bh);
 
     // Cache metrics
@@ -305,7 +395,10 @@ Bounds FontAtlas::rasterize_glyph(FontId font, GlyphId glyph, float fontSize) {
         static_cast<float>(bh),
         bearingY
     };
-    impl_->metricsCache[key] = metrics;
+    // Shaping may already have cached subpixel outline metrics for this glyph.
+    // Do not replace them with rounded bitmap dimensions during rasterization;
+    // measurement and rendering must observe one stable metric set.
+    impl_->metricsCache.try_emplace(key, metrics);
 
     // Cache rect
     impl_->glyphCache[key] = rect;
@@ -360,6 +453,8 @@ bool FontAtlas::get_glyph_metrics(FontId font, GlyphId glyph, float fontSize,
     FT_Error err = FT_Set_Pixel_Sizes(face, 0, static_cast<FT_UInt>(fontSize));
     if (err != FT_Err_Ok) return false;
 
+    // Must match rasterize_glyph()'s load flags so metrics and the
+    // rendered bitmap agree on the same outline.
     err = FT_Load_Glyph(face, glyph, FT_LOAD_DEFAULT);
     if (err != FT_Err_Ok) return false;
 
@@ -395,13 +490,27 @@ bool FontAtlas::get_glyph_metrics(FontId font, GlyphId glyph, float fontSize,
     return true;
 }
 
-void* FontAtlas::create_hb_font(FontId font) const {
+void* FontAtlas::create_hb_font(FontId font, float fontSize) const {
     if (!impl_) return nullptr;
 
     auto it = impl_->faces.find(font);
     if (it == impl_->faces.end()) return nullptr;
 
+    // Shape at the SAME pixel size the rasterizer uses (static_cast<FT_UInt>
+    // floors). Shaping at ceil() while rasterizing at floor() inflates every
+    // inter-glyph advance relative to the ink, which reads as visible gaps
+    // between letters (e.g. "flow" -> "fl ow").
+    FT_Set_Pixel_Sizes(it->second, 0, static_cast<FT_UInt>(fontSize));
     return hb_ft_font_create_referenced(it->second);
+}
+
+math::Vec3f FontAtlas::solid_uv() const {
+    return impl_ ? impl_->solidUv : math::Vec3f{};
+}
+
+void FontAtlas::initialize_default_paths() {
+    // Add our bundled font search path
+    add_font_search_path("assets/fonts/");
 }
 
 } // namespace exd::geometry

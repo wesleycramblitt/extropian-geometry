@@ -4,6 +4,7 @@
 #include <exd/math/vec3.hpp>
 
 #include <cstdint>
+#include <cstddef>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -57,9 +58,13 @@ struct TextStyle
 struct GlyphPlacement
 {
     GlyphId     glyph = 0;
+    std::size_t sourceByteBegin = 0;
+    std::size_t sourceByteEnd = 0;
     math::Vec3f position = {0.0f, 0.0f, 0.0f};
     math::Vec3f size     = {0.0f, 0.0f, 0.0f};
     Bounds      atlasRect; // UV rectangle in glyph atlas
+    math::Quat  color = {1.0f, 1.0f, 1.0f, 1.0f};
+    bool        hasColorOverride = false;
 };
 
 // ── Shaped text ──

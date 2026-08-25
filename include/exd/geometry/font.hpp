@@ -77,7 +77,18 @@ public:
     /// Create a HarfBuzz font object for use with text shaping.
     /// The caller is responsible for destroying the returned hb_font_t with hb_font_destroy().
     /// Returns nullptr if the font hasn't been loaded.
-    void* create_hb_font(FontId font) const;
+    void* create_hb_font(FontId font, float fontSize = 16.0f) const;
+
+    /// UV coordinate of a small opaque white texel reserved in this atlas.
+    /// Use this for solid-fill geometry (e.g. a math fraction bar) merged
+    /// into a mesh that otherwise samples this atlas as glyph quads — such
+    /// a quad's own UVs would otherwise land on whatever happens to be
+    /// packed there (usually mostly-transparent gutter) and render as an
+    /// invisible hairline instead of a solid fill.
+    math::Vec3f solid_uv() const;
+
+    /// Initialize default font search paths including bundled fonts.
+    void initialize_default_paths();
 
 private:
     struct Impl;

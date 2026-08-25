@@ -2,6 +2,14 @@
 
 > Renderer-independent mesh generation and geometric computation.
 > Pure CPU math. Compiles to WASM with zero changes.
+>
+> **Updated 2026-08 — semantic illustration engine.** geometry is the geometry
+> layer of the 2D "semantic illustration engine" (see `modules/scene` and
+> `modules/scene_renderer`). New priorities: a **first-class TextEngine** (measurement,
+> rich spans), a **Math typesetting AST** (§16), and a strong **vector-path
+> system** (§12) — these are what make dense poster-quality explainers possible.
+> The WebGL path replaces the deprecated `extropian-web-ui` DOM renderer; text
+> renders through glyph-atlas/SDF meshes here, not DOM.
 
 ## 1. Purpose
 
@@ -14,19 +22,19 @@ Geometry answers:
 Geometry does NOT answer:
 
 - How to display the mesh (renderer's job)
-- How to compose the mesh into a UI component (extropian-ui's job, desktop only)
-- How to lay out UI elements (canvas / canvas-web's job)
+- How to compose the mesh into a UI component (the `ui` module's job — dual-platform)
+- How to lay out UI elements (the `layout` module / compiler's job)
 - What the mesh means semantically (composer's job)
 
 ## 2. Position in the Architecture
 
 ```
-Higher-Level App (canvas / canvas-web)
+Application/upstream producer → VisualDocument → scene_renderer
 │
-├── extropian-ui ──────────┐  (desktop only: button, panel, slider meshes)
-│   UI component meshes    │
-│                          │
-└── extropian-geometry ◄───┘  (THIS REPO)
+├── ui (sibling module) ───────┐  (button, panel, slider meshes)
+│   UI component meshes        │
+│                              │
+└── geometry ◄─────────────────┘  (THIS MODULE)
     │  MeshData, Vertex, Bounds types
     │  2D/3D primitive generators
     │  Path2D tessellation
@@ -37,7 +45,9 @@ Higher-Level App (canvas / canvas-web)
         Vec3f, Quat, math utilities
 ```
 
-Geometry is a **leaf dependency**. `extropian-ui` depends on it. The WebGL canvas inset in canvas-web uses it for mesh generation. It compiles to WASM with zero changes — pure math, no platform dependencies.
+Geometry is a **leaf dependency**. The `ui` module depends on it. The desktop path
+(and the planned WASM/WebGL path) use it for mesh generation. It compiles to WASM
+with zero changes — pure math, no platform dependencies.
 
 ## 3. Design Principles
 
@@ -55,7 +65,7 @@ Geometry is a **leaf dependency**. `extropian-ui` depends on it. The WebGL canva
 - **2D shapes are 3D-ready.** All 2D primitives live on the XY plane (Z=0)
   with CCW winding and +Z normals, making them valid profile inputs for
   `generate_extrusion_mesh()` without rebuilding geometry. This is the
-  contract `extropian-ui` relies on for extruded components like Panel.
+  contract the `ui` module relies on for extruded components like Panel.
 - **Depends only on core.** `Vec3f`, `Quat`, and basic math utilities.
 
 ### 3a. Segment Count Guidelines
@@ -108,7 +118,7 @@ parallel API surface, works identically everywhere.
 | Tear drop | Marker shape |
 | Crescent / Lune | Moon phase / icon |
 | Spiral | Archimedean or logarithmic spiral curve |
-| Rounded-rect profile | 2D CCW outline for extrusion input (eliminates manual vertex construction in extropian-ui) |
+| Rounded-rect profile | 2D CCW outline for extrusion input (eliminates manual vertex construction in the `ui` module) |
 
 ### 3D Primitives
 
@@ -390,7 +400,7 @@ Multiple deformations can be chained by calling `deform_mesh()` repeatedly.
 Geometry provides the **infrastructure layer** for text: font loading, glyph
 rasterization, text shaping, and glyph mesh generation. Higher-level composition
 (e.g., UI components with labels, multi-line text blocks) lives in
-`extropian-ui`'s `UITextFactory`.
+the `ui` module's `UITextFactory`.
 
 **Implemented (ENABLE_TEXT=ON):**
 
@@ -410,22 +420,85 @@ rasterization, text shaping, and glyph mesh generation. Higher-level composition
 | RTL / bidirectional shaping | MEDIUM | Arabic, Hebrew — requires HarfBuzz direction flags in TextShaper |
 | Text on path | LOW | Curved glyph placement along a `Path2D` — mesh generation, not layout |
 
-**Out of scope (belongs in extropian-ui):**
+**Out of scope (belongs in the `ui` module):**
 
 | Feature | Description |
 |---|---|
 | Multi-line text layout | Line breaking, paragraph flow — UI composition concern |
 | Rich text (multi-style runs) | `UITextFactory` can call geometry's shaper per-style run |
-| UI component text assembly | Button labels, dropdown text, etc. — `UITextFactory` in extropian-ui |
+| UI component text assembly | Button labels, dropdown text, etc. — `UITextFactory` in the `ui` module |
 | Atlas overflow handling | ui layer monitors atlas, creates new atlas if full |
+
+### 13b. TextEngine — measurement & rich spans (2D priority, 2026-08)
+
+> The single most important subsystem for the poster path. If text looks bad,
+> everything looks bad. This upgrades the current shaper/glyph-mesh layer into a
+> full measurement + layout API, so other systems (annotations, connectors,
+> layout) can attach to **exact** text geometry.
+
+`TextEngine` is an additive facade over the working `FontAtlas`, `TextShaper`,
+`generate_text_mesh()`, and `ui::UITextFactory` stack. It does not replace font
+loading, shaping, atlas management, or glyph mesh generation. Its purpose is to
+make measurement and semantic layout use the exact same shaping implementation
+as rendering.
+
+The public API is not just `drawText(text, x, y)`:
+
+```cpp
+namespace exd::geometry {
+
+struct TextRun {                       // rich text is first-class
+    std::string text;
+    std::string style;                 // resolved typography role (body/emphasis/caption/…)
+    std::optional<std::string> semantic_id;  // semantic fragment anchor (e.g. "laplacian")
+};
+
+struct TextBlock {
+    std::vector<TextRun> runs;
+    std::string alignment;             // left | center | right | justify
+    float max_width = 0.0f;            // 0 = unbounded
+};
+
+struct TextMetrics {
+    math::Vec2f size;                  // exact block bounds
+    float baseline;
+    std::vector<math::Bounds3> run_bounds;  // per-run bounds (for hover/attach)
+};
+
+// measure: no mesh, just metrics (fast, layout passes use this)
+TextMetrics measure(const TextBlock& block);
+
+// layout: wrap/break into lines, resolve run bounds
+TextMetrics layout(const TextBlock& block, float max_width);
+
+// per-semantic-fragment glyph bounds (annotation anchors):
+//   equation.laplacian.bounds.topCenter
+math::Bounds3 glyphBounds(const TextBlock& block, std::string_view semantic_id);
+
+} // namespace exd::geometry
+```
+
+Responsibilities (promoted from "ui concern" to first-class here):
+- glyph metrics, kerning, line breaking, wrapping, alignment, baseline handling
+- glyph-atlas generation (FreeType raster) **and** SDF/MSDF atlas (resolution-independent)
+- rich spans with semantic ids → enables highlight/hover/animate per fragment
+- measurement + `glyphBounds(spanId)` so annotations can point at `α` inside an equation
+
+**Delivery constraint:** bitmap-atlas rendering is sufficient for the first 2D
+engine slice. SDF/MSDF is a later quality improvement. The initial milestone is
+correct measurement, wrapping, baselines, rich-run bounds, and reuse of the
+existing font factory.
+
+Text is **not** a bitmap blob — every run carries a semantic id that the scene
+graph (`modules/scene`) and annotation engine resolve to exact bounds.
 
 ## 14. Non-Goals
 
 - No GPU calls or buffer creation (renderer)
 - No ECS components (core)
-- No UI components (extropian-ui, desktop only)
+- No UI components (the `ui` module)
 - No semantic meaning (composer)
-- No visual document compilation (canvas)
+- No visual document compilation (the compiler / scene_renderer)
 - No physics simulation or collision response
 - No file format import/export (OBJ, glTF, STL, etc.) — converters belong elsewhere
 - No implicit mesh validation — generators return empty MeshData on degenerate input but do not diagnose why
@@ -456,3 +529,58 @@ exact CSG on triangle meshes for precision use cases.
 recompute normals. Callers must chain with a planned normal-recompute operation
 or handle normals in the renderer. This is deliberate — it keeps deformation cheap
 for renderers that recompute normals in the vertex shader.
+
+## 16. Math Typesetting (AST) — 2D priority
+
+> **2026-08.** For STEM explainers, math is nearly as important as text. Rather
+> than treating LaTeX as an opaque string, geometry owns a **math AST** whose
+> nodes carry semantic ids, so the engine resolves exact rendered bounds per
+> fragment — `α`, `∂u/∂t`, `∇²u` — the same way `TextEngine` does for rich spans.
+
+```cpp
+namespace exd::geometry {
+
+// Recursive math AST — each node computes its own bounds
+struct MathNode {
+    enum class Kind {
+        Number, Identifier, Symbol,        // leaves
+        Fraction, Superscript, Subscript,  // stacking
+        Root, Parentheses, Bracket,        // enclosure
+        Sum, Integral,                     // large operators
+        Matrix, Vector,                    // layout grids
+        Binary, Unary,                     // operators (+, −, ×, ∂, ∇, …)
+        Derivative, Limit, Cases,          // composed
+    };
+    Kind kind;
+    std::string value;                     // leaf text ("α", "∂", "∇²u")
+    std::optional<std::string> semantic_id; // "laplacian", "timeDerivative", …
+    std::vector<MathNode> children;
+};
+
+struct MathMetrics {
+    math::Vec2f size;
+    float baseline;
+    std::unordered_map<std::string, math::Bounds3> fragment_bounds; // semantic_id → bounds
+};
+
+// parse LaTeX-like source → AST (or accept AST directly)
+MathNode parse(const std::string& source);
+
+// recursive bounds resolution: children → parent box
+MathMetrics layout(const MathNode& node, const MathStyle& style);
+
+// AST → meshes (glyphs from TextEngine, delimiters/brackets from Path2D)
+MeshData render(const MathNode& node, const MathStyle& style);
+
+} // namespace exd::geometry
+```
+
+This gives the application or upstream producer a direct mapping
+**semantic element → math AST node → exact rendered bounds**, so Composer can
+manipulate `laplacian`, `alpha`, or `timeDerivative` directly (highlight,
+annotate, animate) without string surgery.
+
+Required constructs (full set): fractions, superscripts, subscripts, roots,
+operators, parentheses/brackets, summations, integrals, matrices, vectors,
+Greek symbols, derivatives, limits, cases. Delimiter sizing and large-operator
+limits are recursive (child bounds drive parent glyph scale).
