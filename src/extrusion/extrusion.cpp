@@ -115,22 +115,26 @@ MeshData generate_lathe_mesh(const LatheGeometry& geometry)
         for (size_t i = 0; i < nProf; ++i) {
             const auto& p = profileVerts[i];
             math::Vec3f pos;
+            math::Vec3f normal;
 
             switch (geometry.axis) {
             case LatheAxis::Y:
-                pos = {p.x * ca, p.y, p.x * sa};
+                pos    = {p.x * ca, p.y, p.x * sa};
+                normal = {ca, 0, sa};
                 break;
             case LatheAxis::X:
-                pos = {p.y, p.x * ca, p.x * sa};
+                pos    = {p.y, p.x * ca, p.x * sa};
+                normal = {0, ca, sa};
                 break;
             case LatheAxis::Z:
-                pos = {p.x * ca, p.x * sa, p.y};
+                pos    = {p.x * ca, p.x * sa, p.y};
+                normal = {ca, sa, 0};
                 break;
             }
 
             Vertex v;
             v.position = pos;
-            v.normal   = {ca, 0, sa};
+            v.normal   = normal;
             v.color    = geometry.color;
             builder.add_vertex(v);
         }

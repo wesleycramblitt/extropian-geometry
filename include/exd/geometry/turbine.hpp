@@ -22,6 +22,10 @@ namespace exd::geometry
 //  Every parameter is a TurbineParam: a value with bounds, a unit, and a
 //  locked/optimizable flag, so an optimizer can sweep the design space without
 //  a per-machine-type schema.
+//
+//  Orientation: generated meshes place the machine centered on the origin with
+//  its rotating axis along WORLD -Z, so a camera looking down -Z sees the
+//  turbine head-on when it is placed at the origin.
 // ═══════════════════════════════════════════════════════════════════════════
 
 /// A single bounded, unit-annotated parameter. `locked == true` marks a value

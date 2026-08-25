@@ -2,6 +2,10 @@
 
 #include <exd/geometry/turbine.hpp>
 
+#include <exd/geometry/mesh_ops.hpp>
+
+#include <cmath>
+
 using namespace exd::geometry;
 
 namespace {
@@ -82,6 +86,17 @@ TEST_CASE("turbine mesh assembles flow path and rows") {
     REQUIRE_FALSE(mesh.vertices.empty());
     const MeshData path_only = generate_flow_path_mesh(annulus(), 64);
     CHECK(mesh.vertices.size() > path_only.vertices.size());
+}
+
+TEST_CASE("turbine is centered on origin and runs along -Z") {
+    const MeshData mesh = generate_flow_path_mesh(annulus(), 64);
+    REQUIRE_FALSE(mesh.vertices.empty());
+    Bounds b = compute_bounds(mesh.vertices);
+    // Centered: |min.z| ~= |max.z| (annulus spans z in [0,2] -> world z in [-1,1]).
+    CHECK((b.min.z + b.max.z) == doctest::Approx(0.0f).epsilon(0.05f));
+    // Axial extent along Z (r <= 1.0 in XY), not along Y.
+    CHECK(std::fabs(b.max.z) > 0.9f);
+    CHECK(std::fabs(b.max.y) <= 1.0f);
 }
 
 TEST_CASE("empty flow path produces empty mesh") {

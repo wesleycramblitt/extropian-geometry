@@ -6,6 +6,7 @@
 
 #include <array>
 #include <cmath>
+#include <limits>
 #include <cstdint>
 #include <vector>
 
@@ -68,6 +69,19 @@ math::Vec2f lerp(const math::Vec2f& a, const math::Vec2f& b, float t)
     return a + (b - a) * t;
 }
 
+/// Axial midpoint of the flow path z-range. The whole machine is centered on
+/// the origin and its axis runs along -Z by default (matching a camera that
+/// looks down -Z), so a turbine can be dropped at the origin directly.
+float axial_center(const FlowPath& flow)
+{
+    float zmin =  std::numeric_limits<float>::max();
+    float zmax = -std::numeric_limits<float>::max();
+    for (const auto& p : flow.hub_points)    { zmin = std::min(zmin, p.x); zmax = std::max(zmax, p.x); }
+    for (const auto& p : flow.shroud_points) { zmin = std::min(zmin, p.x); zmax = std::max(zmax, p.x); }
+    if (zmin > zmax) return 0.0f;
+    return (zmin + zmax) * 0.5f;
+}
+
 /// Cubic-Hermite camber line from inlet/exit metal angles (relative to chord).
 struct Camber
 {
@@ -108,20 +122,22 @@ MeshData generate_flow_path_mesh(const FlowPath& flow, uint32_t revolve_segments
     const float zmax = std::min(hub.max_x(), shroud.max_x());
     if (zmax <= zmin) return {};
 
+    const float center = axial_center(flow);
     const uint32_t steps = std::max(8u, revolve_segments / 2u);
     auto sample = [&](const MonotoneCubicSpline& s) {
         std::vector<math::Vec3f> profile;
         profile.reserve(steps + 1);
         for (uint32_t i = 0; i <= steps; ++i) {
             const float z = zmin + (zmax - zmin) * static_cast<float>(i) / static_cast<float>(steps);
-            profile.push_back({s.evaluate(z), z, 0.0f});   // x = r, y = z (revolve around Y)
+            // x = r (revolve radius), y = axial, negated + centered on origin.
+            profile.push_back({s.evaluate(z), -(z - center), 0.0f});
         }
         return profile;
     };
 
     LatheGeometry hub_geom;
     hub_geom.profile  = sample(hub);
-    hub_geom.axis     = LatheAxis::Y;
+    hub_geom.axis     = LatheAxis::Z;
     hub_geom.segments = revolve_segments;
     hub_geom.capped   = false;
 
@@ -189,6 +205,7 @@ MeshData generate_blade_row_mesh(const BladeRow& row, const FlowPath& flow,
 
     const uint32_t n = std::max(8u, row.chordwise_points);
     const uint32_t Z = std::max(1u, static_cast<uint32_t>(row.blade_count.value));
+    const float center = axial_center(flow);
 
     Accumulator acc;
     std::vector<std::vector<uint32_t>> loops;
@@ -223,7 +240,7 @@ MeshData generate_blade_row_mesh(const BladeRow& row, const FlowPath& flow,
             if (f >= 1.0f && row.tip_feature == TipFeature::Clearance)
                 r -= flow.tip_clearance.value;
 
-            const float z = M.x + row.sweep.value * f;
+            const float z = -((M.x + row.sweep.value * f) - center);
             const float theta = (p_tan + row.lean.value * f) / std::max(r, 1e-6f);
 
             const math::Vec3f pos{ r * std::cos(theta), r * std::sin(theta), z };
