@@ -21,6 +21,12 @@
 // ── SDF Blending ──
 #include <exd/geometry/blend.hpp>
 
+// ── Curves ──
+#include <exd/geometry/spline.hpp>
+
+// ── Parametric machines ──
+#include <exd/geometry/turbine.hpp>
+
 // ── Advanced generators ──
 #include <exd/geometry/extrusion.hpp>
 #include <exd/geometry/heightmap.hpp>

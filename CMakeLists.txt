@@ -36,6 +36,8 @@ endif()
 add_library(exd-geometry STATIC
     src/mesh_builder.cpp
     src/mesh_ops.cpp
+    src/spline.cpp
+    src/turbine/turbine.cpp
     src/primitives3d/sphere.cpp
     src/primitives3d/box.cpp
     src/primitives3d/cylinder.cpp
@@ -105,5 +107,12 @@ endif()
 option(BUILD_TESTS "Build Geometry tests" OFF)
 if(BUILD_TESTS)
     enable_testing()
+    if(NOT TARGET doctest::doctest_with_main)
+        FetchContent_Declare(doctest
+            GIT_REPOSITORY https://github.com/doctest/doctest.git
+            GIT_TAG v2.4.11
+        )
+        FetchContent_MakeAvailable(doctest)
+    endif()
     add_subdirectory(tests)
 endif()

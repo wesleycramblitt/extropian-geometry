@@ -26,6 +26,14 @@ foreach(target ${TEST_TARGETS})
     add_test(NAME ${target} COMMAND ${target})
 endforeach()
 
+add_executable(test_spline  unit/spline_test.cpp)
+target_link_libraries(test_spline PRIVATE exd-geometry exd::core doctest::doctest_with_main)
+add_test(NAME test_spline COMMAND test_spline)
+
+add_executable(test_turbine unit/turbine_test.cpp)
+target_link_libraries(test_turbine PRIVATE exd-geometry exd::core doctest::doctest_with_main)
+add_test(NAME test_turbine COMMAND test_turbine)
+
 # ── Text tests ──
 if(ENABLE_TEXT)
     add_executable(test_text unit/text_test.cpp)
