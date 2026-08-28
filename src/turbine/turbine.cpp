@@ -1,5 +1,7 @@
 #include <exd/geometry/turbine.hpp>
 
+#include "turbine_internal.hpp"
+
 #include <exd/geometry/extrusion.hpp>
 #include <exd/geometry/mesh_ops.hpp>
 #include <exd/geometry/part.hpp>
@@ -112,99 +114,42 @@ float naca_thickness(float x, float t_over_c)
 
 } // namespace
 
-MeshData generate_flow_path_mesh(const FlowPath& flow, uint32_t revolve_segments)
+namespace detail {
+
+std::vector<math::Vec3f> build_meridional_profile(const std::vector<math::Vec2f>& points)
 {
-    if (flow.hub_points.size() < 2 || flow.shroud_points.size() < 2)
-        return {};
+    if (points.size() < 2) return {};
 
-    const MonotoneCubicSpline hub = spline_of(flow.hub_points);
-    const MonotoneCubicSpline shroud = spline_of(flow.shroud_points);
-
-    const float zmin = std::max(hub.min_x(), shroud.min_x());
-    const float zmax = std::min(hub.max_x(), shroud.max_x());
+    const MonotoneCubicSpline spline = spline_of(points);
+    const float zmin = spline.min_x();
+    const float zmax = spline.max_x();
     if (zmax <= zmin) return {};
 
-    const float center = axial_center(flow);
-    const uint32_t steps = std::max(8u, revolve_segments / 2u);
-    auto sample = [&](const MonotoneCubicSpline& s) {
-        std::vector<math::Vec3f> profile;
-        profile.reserve(steps + 1);
-        for (uint32_t i = 0; i <= steps; ++i) {
-            const float z = zmin + (zmax - zmin) * static_cast<float>(i) / static_cast<float>(steps);
-            // x = r (revolve radius), y = axial, negated + centered on origin.
-            profile.push_back({s.evaluate(z), -(z - center), 0.0f});
-        }
-        return profile;
-    };
+    // Meridional refinement matching generate_flow_path_mesh at the default
+    // revolve_segments = 64 (steps = max(8, 64/2) = 32).
+    const uint32_t steps = 32u;
+    const float center = (zmin + zmax) * 0.5f;
 
-    LatheGeometry hub_geom;
-    hub_geom.profile  = sample(hub);
-    hub_geom.axis     = LatheAxis::Z;
-    hub_geom.segments = revolve_segments;
-    hub_geom.capped   = false;
-
-    LatheGeometry shroud_geom = hub_geom;
-    shroud_geom.profile = sample(shroud);
-
-    std::array<MeshData, 2> parts{generate_lathe_mesh(hub_geom), generate_lathe_mesh(shroud_geom)};
-    return merge_meshes(parts);
+    std::vector<math::Vec3f> profile;
+    profile.reserve(steps + 1);
+    for (uint32_t i = 0; i <= steps; ++i) {
+        const float z = zmin + (zmax - zmin) * static_cast<float>(i) / static_cast<float>(steps);
+        // x = r (revolve radius), y = axial, negated + centered on origin.
+        profile.push_back({spline.evaluate(z), -(z - center), 0.0f});
+    }
+    return profile;
 }
 
-std::vector<math::Vec2f> generate_blade_section_profile(
-    const BladeSection& section, float chord_length, uint32_t points)
+MeshData build_blade_row_impl(const BladeRow& row, const FlowPath& flow,
+                              uint32_t revolve_segments,
+                              BladeRowBuildInfo* info)
 {
-    const uint32_t n = std::max(12u, points);
-    const uint32_t half = n / 2u;
-
-    MonotoneCubicSpline camber_spline;
-    if (section.camber_line.size() >= 2)
-        camber_spline = spline_of(section.camber_line);
-
-    const float inlet_rel = deg2rad(section.inlet_metal_angle.value - section.stagger.value);
-    const float exit_rel  = deg2rad(section.exit_metal_angle.value - section.stagger.value);
-    Camber camber;
-    camber.s0 = std::tan(inlet_rel);
-    camber.s1 = std::tan(exit_rel);
-
-    const float t_over_c = section.max_thickness.value;
-
-    auto camber_at = [&](float x) -> float {
-        return camber_spline.valid() ? camber_spline.evaluate(x) : camber(x);
-    };
-    auto thick_at = [&](float x) -> float {
-        if (section.thickness_distribution.size() >= 2)
-            return spline_of(section.thickness_distribution).evaluate(x);
-        return naca_thickness(x, t_over_c);
-    };
-
-    std::vector<math::Vec2f> loop;
-    loop.reserve(2u * half);
-
-    loop.push_back({1.0f, camber_at(1.0f)});                       // TE
-    for (uint32_t k = 1; k < half; ++k) {
-        const float x = 1.0f - static_cast<float>(k) / static_cast<float>(half);
-        loop.push_back({x, camber_at(x) + 0.5f * thick_at(x)});   // upper
+    if (info) {
+        info->skinPerBlade      = 0;
+        info->hubCapPerBlade    = 0;
+        info->shroudCapPerBlade = 0;
+        info->stridePerBlade    = 0;
     }
-    loop.push_back({0.0f, camber_at(0.0f)});                       // LE
-    for (uint32_t k = 1; k < half; ++k) {
-        const float x = static_cast<float>(k) / static_cast<float>(half);
-        loop.push_back({x, camber_at(x) - 0.5f * thick_at(x)});   // lower
-    }
-    for (auto& p : loop) p = p * chord_length;
-    return loop;
-}
-
-/// Builds row mesh; optionally records per-blade triangle counts
-/// (skin, hub cap, shroud cap) needed for patch construction.
-static MeshData build_blade_row_impl(const BladeRow& row, const FlowPath& flow,
-                                     uint32_t revolve_segments,
-                                     uint32_t* outSkinPerBlade,
-                                     uint32_t* outHubPerBlade,
-                                     uint32_t* outShroudPerBlade)
-{
-    if (outSkinPerBlade)   *outSkinPerBlade   = 0;
-    if (outHubPerBlade)    *outHubPerBlade    = 0;
-    if (outShroudPerBlade) *outShroudPerBlade = 0;
 
     (void)revolve_segments;
 
@@ -265,7 +210,7 @@ static MeshData build_blade_row_impl(const BladeRow& row, const FlowPath& flow,
         for (uint32_t j = 0; j < n; ++j) {
             const uint32_t j1 = (j + 1) % n;
             acc.quad(loops[i][j], loops[i][j1], loops[i + 1][j1], loops[i + 1][j]);
-            if (outSkinPerBlade) *outSkinPerBlade += 2;
+            if (info) info->skinPerBlade += 2;
         }
     }
 
@@ -280,13 +225,15 @@ static MeshData build_blade_row_impl(const BladeRow& row, const FlowPath& flow,
             const uint32_t j1 = (j + 1) % n;
             acc.tri(c, loop[j1], loop[j]);
             if (capLoopIdx == 0) {
-                if (outHubPerBlade) ++(*outHubPerBlade);
+                if (info) ++(info->hubCapPerBlade);
             } else {
-                if (outShroudPerBlade) ++(*outShroudPerBlade);
+                if (info) ++(info->shroudCapPerBlade);
             }
         }
         ++capLoopIdx;
     }
+    if (info)
+        info->stridePerBlade = info->skinPerBlade + info->hubCapPerBlade + info->shroudCapPerBlade;
 
     MeshData blade = acc.build();
 
@@ -302,10 +249,93 @@ static MeshData build_blade_row_impl(const BladeRow& row, const FlowPath& flow,
     return merge_meshes(blades);
 }
 
+const char* blade_row_role_name(BladeRowType type)
+{
+    static const char* names[] = {"stator", "rotor", "nozzle", "diffuser"};
+    const int i = static_cast<int>(type);
+    if (i < 0 || i >= static_cast<int>(sizeof(names) / sizeof(names[0]))) return "unknown";
+    return names[i];
+}
+
+} // namespace detail
+
+MeshData generate_flow_path_mesh(const FlowPath& flow, uint32_t revolve_segments)
+{
+    if (flow.hub_points.size() < 2 || flow.shroud_points.size() < 2)
+        return {};
+
+    // No sampleable overlap between the hub and shroud z-ranges → empty.
+    const MonotoneCubicSpline hub_domain = spline_of(flow.hub_points);
+    const MonotoneCubicSpline shroud_domain = spline_of(flow.shroud_points);
+    const float zmin = std::max(hub_domain.min_x(), shroud_domain.min_x());
+    const float zmax = std::min(hub_domain.max_x(), shroud_domain.max_x());
+    if (zmax <= zmin) return {};
+
+    const std::vector<math::Vec3f> hub_profile = detail::build_meridional_profile(flow.hub_points);
+    const std::vector<math::Vec3f> shroud_profile = detail::build_meridional_profile(flow.shroud_points);
+    if (hub_profile.size() < 2 || shroud_profile.size() < 2) return {};
+
+    LatheGeometry hub_geom;
+    hub_geom.profile  = hub_profile;
+    hub_geom.axis     = LatheAxis::Z;
+    hub_geom.segments = revolve_segments;
+    hub_geom.capped   = false;
+
+    LatheGeometry shroud_geom = hub_geom;
+    shroud_geom.profile = shroud_profile;
+
+    std::array<MeshData, 2> parts{generate_lathe_mesh(hub_geom), generate_lathe_mesh(shroud_geom)};
+    return merge_meshes(parts);
+}
+
+std::vector<math::Vec2f> generate_blade_section_profile(
+    const BladeSection& section, float chord_length, uint32_t points)
+{
+    const uint32_t n = std::max(12u, points);
+    const uint32_t half = n / 2u;
+
+    MonotoneCubicSpline camber_spline;
+    if (section.camber_line.size() >= 2)
+        camber_spline = spline_of(section.camber_line);
+
+    const float inlet_rel = deg2rad(section.inlet_metal_angle.value - section.stagger.value);
+    const float exit_rel  = deg2rad(section.exit_metal_angle.value - section.stagger.value);
+    Camber camber;
+    camber.s0 = std::tan(inlet_rel);
+    camber.s1 = std::tan(exit_rel);
+
+    const float t_over_c = section.max_thickness.value;
+
+    auto camber_at = [&](float x) -> float {
+        return camber_spline.valid() ? camber_spline.evaluate(x) : camber(x);
+    };
+    auto thick_at = [&](float x) -> float {
+        if (section.thickness_distribution.size() >= 2)
+            return spline_of(section.thickness_distribution).evaluate(x);
+        return naca_thickness(x, t_over_c);
+    };
+
+    std::vector<math::Vec2f> loop;
+    loop.reserve(2u * half);
+
+    loop.push_back({1.0f, camber_at(1.0f)});                       // TE
+    for (uint32_t k = 1; k < half; ++k) {
+        const float x = 1.0f - static_cast<float>(k) / static_cast<float>(half);
+        loop.push_back({x, camber_at(x) + 0.5f * thick_at(x)});   // upper
+    }
+    loop.push_back({0.0f, camber_at(0.0f)});                       // LE
+    for (uint32_t k = 1; k < half; ++k) {
+        const float x = static_cast<float>(k) / static_cast<float>(half);
+        loop.push_back({x, camber_at(x) - 0.5f * thick_at(x)});   // lower
+    }
+    for (auto& p : loop) p = p * chord_length;
+    return loop;
+}
+
 MeshData generate_blade_row_mesh(const BladeRow& row, const FlowPath& flow,
                                  uint32_t revolve_segments)
 {
-    return build_blade_row_impl(row, flow, revolve_segments, nullptr, nullptr, nullptr);
+    return detail::build_blade_row_impl(row, flow, revolve_segments, nullptr);
 }
 
 MeshData generate_hub_mesh(const HubDefinition& hub_cfg, uint32_t revolve_segments)
@@ -419,27 +449,25 @@ Assembly generate_turbine_assembly(const TurbineDefinition& turbine)
     push_part("hub", generate_hub_mesh(turbine.hub, turbine.revolve_segments));
     push_part("flow_path", generate_flow_path_mesh(turbine.flow_path, turbine.revolve_segments));
 
-    static const char* roleNames[] = {"stator", "rotor", "nozzle", "diffuser"};
-
     for (size_t i = 0; i < turbine.blade_rows.size(); ++i) {
         const BladeRow& row = turbine.blade_rows[i];
-        uint32_t skin = 0, hub = 0, shroud = 0;
-        MeshData mesh = build_blade_row_impl(row, turbine.flow_path, turbine.revolve_segments,
-                                             &skin, &hub, &shroud);
+        detail::BladeRowBuildInfo info;
+        MeshData mesh = detail::build_blade_row_impl(row, turbine.flow_path,
+                                                     turbine.revolve_segments, &info);
         if (mesh.vertices.empty()) continue;
 
-        Part p = as_part(std::string(roleNames[(int)row.type]) + "_" + std::to_string(i),
+        Part p = as_part(std::string(detail::blade_row_role_name(row.type)) + "_" + std::to_string(i),
                          std::move(mesh));
 
         // Each blade in the row contributes (skin + hub + shroud) triangles in
         // fixed sub-ranges: [skin), [hub), [shroud).
-        const uint32_t stride = skin + hub + shroud;
+        const uint32_t stride = info.stridePerBlade;
         const uint32_t blades = uint32_t(p.mesh.indices.size() / 3) / stride;
         std::vector<uint32_t> skinFaces, hubFaces, shroudFaces;
         for (uint32_t k = 0; k < blades; ++k) {
-            for (uint32_t f = 0; f < skin;   ++f) skinFaces.push_back(k * stride + f);
-            for (uint32_t f = 0; f < hub;    ++f) hubFaces.push_back(k * stride + skin + f);
-            for (uint32_t f = 0; f < shroud; ++f) shroudFaces.push_back(k * stride + skin + hub + f);
+            for (uint32_t f = 0; f < info.skinPerBlade;   ++f) skinFaces.push_back(k * stride + f);
+            for (uint32_t f = 0; f < info.hubCapPerBlade; ++f) hubFaces.push_back(k * stride + info.skinPerBlade + f);
+            for (uint32_t f = 0; f < info.shroudCapPerBlade; ++f) shroudFaces.push_back(k * stride + info.skinPerBlade + info.hubCapPerBlade + f);
         }
         p.patches.push_back({"blade_surface", std::move(skinFaces)});
         p.patches.push_back({"hub_cap", std::move(hubFaces)});

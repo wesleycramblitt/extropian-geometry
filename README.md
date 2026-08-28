@@ -13,6 +13,7 @@ shaping additionally uses FreeType + HarfBuzz.
 - **Mesh ops** — merge, transform, bounds; incremental `MeshBuilder`.
 - **Parts & patches** — `Part`/`Patch`/`Assembly` with labelled face sets for boundary conditions; native patches on cylinder/cone/box/extrusion/lathe; turbine assemblies with per-row patched parts.
 - **Loft / processing** — loft/skin between sections, polygon triangulation (concave + holes), vertex welding, normal recomputation.
+- **Machines** — compressor recipe: staged axial machine as a patched Assembly (casing, spinner, rotor/stator rows with boundary patches).
 - **Path / blend / SDF** — path following, signed-distance-field blending,
   marching cubes, extrusion, heightmaps, deformation.
 - **Gizmos** — per-part translation/rotation/scale interaction gizmos plus

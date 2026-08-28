@@ -181,6 +181,7 @@ interaction workflows (boundary-condition unit = face set = "patch"):
 | Extrusion (part) | `ExtrusionGeometry` | `generate_extrusion_part()` |
 | Lathe (part) | `LatheGeometry` | `generate_lathe_part()` |
 | Turbine (assembly) | `TurbineDefinition` | `generate_turbine_assembly()` |
+| Compressor | `CompressorDefinition` | `generate_compressor_assembly()` |
 
 **Planned additions (3D):**
 
@@ -319,6 +320,7 @@ include/exd/geometry/
 ├── heightmap.hpp            # Heightmap → terrain mesh
 ├── part.hpp                 # Part/Patch/Assembly modelling layer
 ├── loft.hpp                # Loft/skin operator
+├── compressor.hpp           # Compressor recipe
 └── geometry.hpp             # Umbrella header (includes all of the above)
 
 src/
@@ -348,13 +350,18 @@ src/
 │   └── part.cpp              # Part/Patch/Assembly helpers + ops
 ├── gizmos/
 │   ├── gizmo_internal.hpp        # Private mesh helpers (not installed)
-│   ├── part.cpp                  # Part/Patch/Assembly helpers
 │   ├── gizmo_internal.cpp
 │   ├── gizmo_parts.cpp           # merge/filter GizmoParts
 │   ├── translation_gizmo.cpp     # per-part translate/scale/rotate gizmos
 │   ├── rotation_gizmo.cpp
 │   ├── scale_gizmo.cpp
 │   └── deform_gizmos.cpp         # bend/twist/taper/lattice widgets
+├── turbine/
+│   └── turbine.cpp, turbine_internal.hpp
+├── loft/
+│   └── loft.cpp
+├── compressor/
+│   └── compressor.cpp
 
 demo/
 ├── CMakeLists.txt

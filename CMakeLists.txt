@@ -38,6 +38,7 @@ add_library(exd-geometry STATIC
     src/mesh_ops.cpp
     src/spline.cpp
     src/turbine/turbine.cpp
+    src/compressor/compressor.cpp
     src/primitives3d/sphere.cpp
     src/primitives3d/box.cpp
     src/primitives3d/cylinder.cpp

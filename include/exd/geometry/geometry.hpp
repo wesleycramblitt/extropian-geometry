@@ -33,6 +33,9 @@
 // ── Parametric machines ──
 #include <exd/geometry/turbine.hpp>
 
+// ── Machines ──
+#include <exd/geometry/compressor.hpp>
+
 // ── Advanced generators ──
 #include <exd/geometry/extrusion.hpp>
 #include <exd/geometry/heightmap.hpp>
