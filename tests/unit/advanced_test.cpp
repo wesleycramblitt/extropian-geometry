@@ -44,6 +44,7 @@ TEST_CASE("lathe: simple line profile produces cylinder-like shape")
     LatheGeometry geom;
     geom.profile = {{0.5f, -0.5f, 0}, {0.5f, 0.5f, 0}};
     geom.segments = 32;
+    geom.capped = false;   // side surface only
 
     auto mesh = generate_lathe_mesh(geom);
     CHECK(!mesh.vertices.empty());
@@ -52,6 +53,38 @@ TEST_CASE("lathe: simple line profile produces cylinder-like shape")
 
     size_t expectedVerts = 2 * 33; // 2 profile points × (32+1) rings
     CHECK(mesh.vertices.size() == expectedVerts);
+}
+
+TEST_CASE("lathe: capped cylinder has flat end caps")
+{
+    LatheGeometry geom;
+    geom.profile = {{0.5f, -0.5f, 0}, {0.5f, 0.5f, 0}};
+    geom.segments = 32;
+    geom.axis = LatheAxis::Z;
+
+    auto mesh = generate_lathe_mesh(geom);
+    // Side rings (2 × 33) + per-end cap ring copies (33) + cap center (1) × 2.
+    CHECK(mesh.vertices.size() == 2 * 33 + 2 * (33 + 1));
+
+    // Each end contributes a cap center plus a copied ring with axial normals.
+    int minus_z = 0, plus_z = 0;
+    for (const auto& v : mesh.vertices) {
+        if (v.normal.z < -0.99f) ++minus_z;
+        if (v.normal.z >  0.99f) ++plus_z;
+    }
+    CHECK(minus_z == 1 + 33);   // aft cap (z = -0.5)
+    CHECK(plus_z  == 1 + 33);   // front cap (z = +0.5)
+
+    // Cap centers sit on the axis, at the cap planes.
+    bool axis_aft  = false, axis_front = false;
+    for (const auto& v : mesh.vertices) {
+        if (v.normal.z < -0.99f && v.position.x == 0.0f && v.position.y == 0.0f)
+            axis_aft = (v.position.z == doctest::Approx(-0.5f));
+        if (v.normal.z >  0.99f && v.position.x == 0.0f && v.position.y == 0.0f)
+            axis_front = (v.position.z == doctest::Approx(0.5f));
+    }
+    CHECK(axis_aft);
+    CHECK(axis_front);
 }
 
 TEST_CASE("lathe: partial revolve (half)")

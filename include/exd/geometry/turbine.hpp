@@ -1,6 +1,7 @@
 #pragma once
 
 #include <exd/geometry/types.hpp>
+#include <exd/geometry/part.hpp>
 #include <exd/math/vec2.hpp>
 #include <exd/math/vec3.hpp>
 
@@ -43,6 +44,11 @@ enum class BladeRowType { Stator, Rotor, Nozzle, Diffuser };
 enum class StackingRule { LeadingEdge, TrailingEdge, Centroid, QuarterChord };
 enum class TipFeature   { None, Clearance, Squealer, Shroud };
 
+/// Solid center-body (hub) profile families. Different shapes map onto
+/// different machine kinds: wind-turbine spinner, bullet-shaped high-speed
+/// nose, plain cylindrical core, double-tapered spindle, or a thin disc rotor.
+enum class HubShape { None, Spinner, Bullet, Cylinder, Tapered, FlatDisk };
+
 /// Axisymmetric flow path: the rotating-axis (z, r, θ) frame is implicit; the
 /// hub and shroud are monotone splines r(z) given by their control points.
 struct FlowPath
@@ -67,7 +73,16 @@ struct BladeSection
     float span = 0.0f;
 
     TurbineParam chord{0.05f, 0.001f, 0.5f, "m", false};
-    TurbineParam stagger{0.0f, -90.0f, 90.0f, "deg", false};
+    // Stagger rotates the section about its LE in the (axial, tangential)
+    // plane. ANY angle is valid: |stagger| > 90 flips the section (reversed
+    // or feathered blades), 90 puts it edge-on. Sense convention: for
+    // |stagger| < 90 deg the camber's convex (suction) side faces +theta
+    // (positive rotation about +Z). A rotor spinning counterclockwise when
+    // viewed from the upwind end (+Z) with the convex side at +theta
+    // extracts energy from an axial flow (turbine sense, as long as the
+    // relative flow still runs LE -> TE); reversing the spin makes the same
+    // blade set behave as a fan.
+    TurbineParam stagger{0.0f, -360.0f, 360.0f, "deg", false};
     TurbineParam inlet_metal_angle{0.0f, -90.0f, 90.0f, "deg", false};
     TurbineParam exit_metal_angle{0.0f, -90.0f, 90.0f, "deg", false};
 
@@ -89,6 +104,9 @@ struct BladeRow
 {
     BladeRowType type = BladeRowType::Stator;
 
+    // Rows are revolved about +Z; a positive rotation (viewed from +Z) is
+    // counterclockwise, which pairs with a positive-cambered section into
+    // the turbine sense described on BladeSection::stagger.
     TurbineParam blade_count{24, 1, 200, "", false};
     TurbineParam rotational_speed{0, 0, 100000, "rpm", true};  // rotor only
 
@@ -112,11 +130,32 @@ struct BladeRow
     uint32_t chordwise_points = 24;   // points per section profile
 };
 
+/// Solid hub / center body sitting at the rotor plane (z = 0, +Z forward).
+/// Shape-specific fields:
+///   • root_radius  — radius at the rotor plane, where the blade roots attach
+///   • front_length — axial extent forward of the rotor plane (+Z)
+///   • aft_length   — axial extent behind the rotor plane (-Z)
+///   • aft_radius   — radius of the trailing end (Tapered only; 0 = pointed)
+///   • nose_power   — Bullet nose sharpness: 1 = cone, <1 = pointed bullet
+/// The meridional profile is revolved about the machine axis (Z).
+struct HubDefinition
+{
+    HubShape shape = HubShape::Spinner;
+    float root_radius  = 0.35f;   // blade-root radius                    [m]
+    float front_length = 0.60f;   // nose extent forward of rotor plane   [m]
+    float aft_length   = 0.40f;   // body extent behind rotor plane       [m]
+    float aft_radius   = 0.0f;    // trailing-end radius (Tapered; 0 = point) [m]
+    float nose_power   = 0.65f;   // nose curve exponent (Bullet)         [-]
+    uint32_t profile_points = 16; // samples along the curved portions
+};
+
 /// A complete machine: one flow path plus any number of blade rows.
 struct TurbineDefinition
 {
     FlowPath flow_path;
     std::vector<BladeRow> blade_rows;
+    /// Optional solid center body (HubShape::None -> no hub mesh).
+    HubDefinition hub;
     uint32_t revolve_segments = 64;
 };
 
@@ -138,7 +177,19 @@ std::vector<math::Vec2f> generate_blade_section_profile(
 MeshData generate_blade_row_mesh(const BladeRow& row, const FlowPath& flow,
                                  uint32_t revolve_segments = 64);
 
+/// Build the solid center body (hub) as a revolved, capped profile in the
+/// same frame as the blade rows: rotor plane at z = 0, axis along Z.
+MeshData generate_hub_mesh(const HubDefinition& hub, uint32_t revolve_segments = 64);
+
 /// Assemble the whole machine: flow path plus every blade row, Z-folded.
 MeshData generate_turbine_mesh(const TurbineDefinition& turbine);
+
+/// Assemble the machine as an Assembly of named, patched Parts — the
+/// simulation contract: complex engineering generators MUST expose patched
+/// parts. Parts: "hub" (patch "surface"), "flow_path" (patch "surface"),
+/// and one Part per blade row named "<role>_<rowIndex>" (e.g. "rotor_0",
+/// "stator_1") with patches "blade_surface", "hub_cap", "shroud_cap" (all
+/// blades of the row folded into these three patches).
+Assembly generate_turbine_assembly(const TurbineDefinition& turbine);
 
 } // namespace exd::geometry

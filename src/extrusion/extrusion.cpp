@@ -1,6 +1,7 @@
 #include <exd/geometry/extrusion.hpp>
 #include <exd/geometry/mesh_builder.hpp>
 #include <exd/geometry/mesh_ops.hpp>
+#include <exd/geometry/part.hpp>
 
 #include <cmath>
 #include <numbers>
@@ -91,9 +92,55 @@ MeshData generate_extrusion_mesh(const ExtrusionGeometry& geometry)
     return result;
 }
 
+Part generate_extrusion_part(const ExtrusionGeometry& geometry)
+{
+    Part part = as_part("extrusion", generate_extrusion_mesh(geometry));
+    if (part.mesh.vertices.empty())
+        return part;
+
+    // Profile n verts; side wall = 2n tris [0, 2n); front cap (-Z) = n tris
+    // [2n, 3n); back cap (+Z) = n tris [3n, 4n) when capped.
+    const uint32_t n = static_cast<uint32_t>(geometry.profile.size());
+    part.patches.push_back(make_patch_range("wall", 0, 2 * n));
+    if (geometry.capped)
+    {
+        part.patches.push_back(make_patch_range("cap_start", 2 * n, n));
+        part.patches.push_back(make_patch_range("cap_end", 3 * n, n));
+    }
+    return part;
+}
+
 // ============================================================================
 // Lathe / Revolve
 // ============================================================================
+
+namespace {
+
+/// Revolve a profile point (x = revolve radius, y = axis coordinate) by (ca, sa).
+math::Vec3f revolve_point(LatheAxis axis, const math::Vec3f& p, float ca, float sa)
+{
+    switch (axis) {
+    case LatheAxis::X: return {p.y, p.x * ca, p.x * sa};
+    case LatheAxis::Y: return {p.x * ca, p.y, p.x * sa};
+    case LatheAxis::Z: return {p.x * ca, p.x * sa, p.y};
+    }
+    return {};
+}
+
+/// Outward surface normal at a profile point: the radial direction tilted by
+/// the local profile slope dr/d(axis), so cones and curved profiles shade
+/// correctly instead of always pointing straight out of the revolve axis.
+math::Vec3f revolve_normal(LatheAxis axis, float ca, float sa, float slope)
+{
+    switch (axis) {
+    case LatheAxis::X: return math::Vec3f{-slope, ca, sa}.normalized();
+    case LatheAxis::Y: return math::Vec3f{ca, -slope, sa}.normalized();
+    case LatheAxis::Z: return math::Vec3f{ca, sa, -slope}.normalized();
+    }
+    return {0.0f, 1.0f, 0.0f};
+}
+
+} // namespace
 
 MeshData generate_lathe_mesh(const LatheGeometry& geometry)
 {
@@ -104,37 +151,31 @@ MeshData generate_lathe_mesh(const LatheGeometry& geometry)
     const size_t nProf = profileVerts.size();
     const float sweep = geometry.endAngle - geometry.startAngle;
 
-    MeshBuilder builder;
-    builder.reserve(nProf * (segs + 1), nProf * segs * 6);
+    // Local profile slope dr/d(axis) at each point (finite differences).
+    std::vector<float> slope(nProf, 0.0f);
+    for (size_t i = 0; i < nProf; ++i) {
+        const size_t j = (i + 1 < nProf) ? i + 1 : i - 1;
+        const float dr = profileVerts[j].x - profileVerts[i].x;
+        const float dz = profileVerts[j].y - profileVerts[i].y;
+        if (std::abs(dz) > 1e-6f) slope[i] = dr / dz;
+    }
 
-    // Generate rings
+    MeshBuilder builder;
+    builder.reserve(nProf * (segs + 1) + 2 * (segs + 2),
+                    nProf * segs * 6 + 2 * segs * 3);
+
+    // Side surface: one angular ring per profile point (profiles ordered
+    // bottom → top; ring 0 = start angle, ring segs = end angle).
     for (uint32_t r = 0; r <= segs; ++r) {
         float angle = geometry.startAngle + sweep * static_cast<float>(r) / static_cast<float>(segs);
         float ca = std::cos(angle), sa = std::sin(angle);
 
         for (size_t i = 0; i < nProf; ++i) {
             const auto& p = profileVerts[i];
-            math::Vec3f pos;
-            math::Vec3f normal;
-
-            switch (geometry.axis) {
-            case LatheAxis::Y:
-                pos    = {p.x * ca, p.y, p.x * sa};
-                normal = {ca, 0, sa};
-                break;
-            case LatheAxis::X:
-                pos    = {p.y, p.x * ca, p.x * sa};
-                normal = {0, ca, sa};
-                break;
-            case LatheAxis::Z:
-                pos    = {p.x * ca, p.x * sa, p.y};
-                normal = {ca, sa, 0};
-                break;
-            }
 
             Vertex v;
-            v.position = pos;
-            v.normal   = normal;
+            v.position = revolve_point(geometry.axis, p, ca, sa);
+            v.normal   = revolve_normal(geometry.axis, ca, sa, slope[i]);
             v.color    = geometry.color;
             builder.add_vertex(v);
         }
@@ -155,9 +196,90 @@ MeshData generate_lathe_mesh(const LatheGeometry& geometry)
         }
     }
 
+    // End caps: a triangle fan per profile end. Ring copies get the axial cap
+    // normal so caps render flat with a hard edge at the rim. The cap at the
+    // first profile point faces -axis, the cap at the last faces +axis.
+    // Points on the revolve axis (|r| ~ 0) are pointed and need no cap.
+    if (geometry.capped) {
+        const float kEps = 1e-5f;
+
+        auto add_cap = [&](size_t k, bool bottom) {
+            if (std::abs(profileVerts[k].x) < kEps) return;
+
+            math::Vec3f axis_n;
+            switch (geometry.axis) {
+            case LatheAxis::X: axis_n = {1.0f, 0.0f, 0.0f}; break;
+            case LatheAxis::Y: axis_n = {0.0f, 1.0f, 0.0f}; break;
+            case LatheAxis::Z: axis_n = {0.0f, 0.0f, 1.0f}; break;
+            }
+            if (bottom) axis_n = -axis_n;
+
+            // Fan hub sits on the revolve axis (radius 0) at the cap plane.
+            const math::Vec3f axis_pt{0.0f, profileVerts[k].y, 0.0f};
+            Vertex center;
+            center.position = revolve_point(geometry.axis, axis_pt, 1.0f, 0.0f);
+            center.normal   = axis_n;
+            center.color    = geometry.color;
+            const uint32_t c = builder.add_vertex(center);
+
+            // Angular ring copies at this profile end, re-normalized to the cap.
+            std::vector<uint32_t> ring;
+            ring.reserve(segs + 1);
+            for (uint32_t r = 0; r <= segs; ++r) {
+                const float angle = geometry.startAngle + sweep * static_cast<float>(r) / static_cast<float>(segs);
+                const float ca = std::cos(angle), sa = std::sin(angle);
+                Vertex v;
+                v.position = revolve_point(geometry.axis, profileVerts[k], ca, sa);
+                v.normal   = axis_n;
+                v.color    = geometry.color;
+                ring.push_back(builder.add_vertex(v));
+            }
+
+            // Winding chosen so the fan's geometric normal matches the cap
+            // normal (the ring's handedness differs between the Y and X/Z axes).
+            const bool flip = (bottom != (geometry.axis == LatheAxis::Y));
+            for (uint32_t r = 0; r < segs; ++r) {
+                if (flip)
+                    builder.add_triangle(c, ring[r + 1], ring[r]);
+                else
+                    builder.add_triangle(c, ring[r], ring[r + 1]);
+            }
+        };
+
+        add_cap(0, true);            // first profile point: -axis cap
+        add_cap(nProf - 1, false);   // last profile point:  +axis cap
+    }
+
     auto result = builder.build();
     result.bounds = compute_bounds(result.vertices);
     return result;
+}
+
+Part generate_lathe_part(const LatheGeometry& geometry)
+{
+    Part part = as_part("lathe", generate_lathe_mesh(geometry));
+    if (part.mesh.vertices.empty())
+        return part;
+
+    // nProf profile points, SEG segments; side surface = 2*SEG*(nProf-1) tris
+    // [0, sideCount); caps are triangle fans added per profile end when
+    // capped AND |profile[k].x| >= 1e-5 — bottom (first profile point) fan
+    // first (cap_start, SEG tris), then top (last profile point) fan
+    // (cap_end, SEG tris).
+    const uint32_t SEG    = std::max(3u, geometry.segments);
+    const uint32_t nProf  = static_cast<uint32_t>(geometry.profile.size());
+    const uint32_t sideCount = 2u * SEG * (nProf - 1u);
+
+    part.patches.push_back(make_patch_range("surface", 0, sideCount));
+
+    const bool hasBottom = geometry.capped && std::abs(geometry.profile.front().x) >= 1e-5f;
+    const bool hasTop    = geometry.capped && std::abs(geometry.profile.back().x)  >= 1e-5f;
+
+    if (hasBottom)
+        part.patches.push_back(make_patch_range("cap_start", sideCount, SEG));
+    if (hasTop)
+        part.patches.push_back(make_patch_range("cap_end", sideCount + (hasBottom ? SEG : 0u), SEG));
+    return part;
 }
 
 // ============================================================================

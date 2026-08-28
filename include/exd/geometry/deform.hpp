@@ -43,6 +43,8 @@ struct DeformDescriptor
 };
 
 /// Apply deformation to a mesh.  Returns a new MeshData; input unchanged.
+/// Deformation preserves vertex order and the index buffer, so `Part.patches`
+/// (triangle ordinals) remain valid when applied to `part.mesh`.
 /// Normals are NOT recomputed by default — call compute_bounds for bounds only.
 MeshData deform_mesh(const MeshData& mesh, const DeformDescriptor& desc);
 

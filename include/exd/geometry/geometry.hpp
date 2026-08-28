@@ -7,6 +7,9 @@
 #include <exd/geometry/mesh_builder.hpp>
 #include <exd/geometry/mesh_ops.hpp>
 
+// ── Parts & assemblies ──
+#include <exd/geometry/part.hpp>
+
 // ── Generators ──
 #include <exd/geometry/primitives2d.hpp>
 #include <exd/geometry/primitives3d.hpp>

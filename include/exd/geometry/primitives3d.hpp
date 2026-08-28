@@ -1,6 +1,7 @@
 #pragma once
 
 #include <exd/geometry/types.hpp>
+#include <exd/geometry/part.hpp>
 #include <exd/math/vec3.hpp>
 
 #include <vector>
@@ -144,5 +145,10 @@ MeshData generate_disk_mesh(const DiskGeometry& geometry);
 MeshData generate_arrow3d_mesh(const Arrow3DGeometry& geometry);
 MeshData generate_axes_mesh(const AxesGeometry& geometry);
 MeshData generate_billboard_mesh(const BillboardGeometry& geometry);
+
+// ── Part generators (native BC patches) ──
+Part generate_cylinder_part(const CylinderGeometry& geometry); // wall, cap_start (-Y), cap_end (+Y)
+Part generate_cone_part(const ConeGeometry& geometry);         // wall, cap_start (base)
+Part generate_box_part(const BoxGeometry& geometry);           // +x -x +y -y +z -z
 
 } // namespace exd::geometry

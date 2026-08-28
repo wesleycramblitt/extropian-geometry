@@ -1,4 +1,5 @@
 #include <exd/geometry/primitives3d.hpp>
+#include <exd/geometry/part.hpp>
 
 #include <cmath>
 
@@ -126,6 +127,22 @@ MeshData generate_cylinder_mesh(const CylinderGeometry& geometry)
     mesh.bounds   = {{-radius, -halfH, -radius}, {radius, halfH, radius}};
 
     return mesh;
+}
+
+Part generate_cylinder_part(const CylinderGeometry& geometry)
+{
+    Part part = as_part("cylinder", generate_cylinder_mesh(geometry));
+    if (part.mesh.vertices.empty())
+        return part;
+
+    const uint32_t S = geometry.slices < 3 ? 3 : geometry.slices;
+    part.patches.push_back(make_patch_range("wall", 0, 2 * S));
+    if (geometry.capped)
+    {
+        part.patches.push_back(make_patch_range("cap_start", 2 * S, S));
+        part.patches.push_back(make_patch_range("cap_end", 3 * S, S));
+    }
+    return part;
 }
 
 } // namespace exd::geometry

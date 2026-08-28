@@ -89,6 +89,38 @@ parallel API surface, works identically everywhere.
 
 ## 4. Primitive Types
 
+## 4b. Parts, patches & assemblies
+
+The modeling layer wraps `MeshData` in labelled components for simulation and
+interaction workflows (boundary-condition unit = face set = "patch"):
+
+- **Tier 1 — wrap & tag.** Every `MeshData` can be wrapped in a `Part` via
+  `as_part()` and tagged with labelled face sets (`Patch`es) via
+  `tag_faces()` / `make_patch_range()`. Patches hold triangle ordinals into
+  the part's index buffer, so they survive index-preserving operations.
+- **Tier 2 — native patches.** Cylinder, cone, box, extrusion, and lathe
+  generators emit construction-relative patches at build time:
+
+  | Shape | Patches |
+  |---|---|
+  | Cylinder | `wall`, `cap_start` (-Y), `cap_end` (+Y) |
+  | Cone | `wall`, `cap_start` (base) |
+  | Box | `+x`, `-x`, `+y`, `-y`, `+z`, `-z` |
+  | Extrusion | `wall`, `cap_start` (-Z), `cap_end` (+Z) |
+  | Lathe | `surface`, `cap_start`/`cap_end` (profile ends) |
+
+- **Contract.** Engineering generators (multi-region machines, e.g. turbine)
+  MUST expose a `generate_*_assembly()` returning named `Part`s with boundary
+  patches; plain `MeshData` remains the contract for single-region primitives
+  and renders.
+- **Naming.** Patch names are construction-relative (`wall`, `cap_start`,
+  `cap_end`, `surface`, `+x`/`-x`/…), never guessed physics; consumers map
+  them to solver patch names (inlet/outlet/wall) downstream.
+- **Preservation.** `transform_part()` and `deform_mesh()` preserve patch
+  ordinals (the index buffer is unchanged); `flatten()` remaps them by
+  cumulative triangle offsets and prefixes patch names with the owning part's
+  name; future boolean/weld operations lose patches → callers re-tag.
+
 ### 2D Primitives
 
 | Primitive | Geometry Descriptor | Generator |
@@ -142,6 +174,12 @@ parallel API surface, works identically everywhere.
 | Rotation Gizmo | `RotationGizmoGeometry` | `generate_rotation_gizmo()` |
 | Scale Gizmo | `ScaleGizmoGeometry` | `generate_scale_gizmo()` |
 | Bend/Twist/Taper/Lattice gizmos | `Bend/Twist/Taper`...`Geometry`, `LatticeCageGeometry` | `generate_*_gizmo()` |
+| Cylinder (part) | `CylinderGeometry` | `generate_cylinder_part()` |
+| Cone (part) | `ConeGeometry` | `generate_cone_part()` |
+| Box (part) | `BoxGeometry` | `generate_box_part()` |
+| Extrusion (part) | `ExtrusionGeometry` | `generate_extrusion_part()` |
+| Lathe (part) | `LatheGeometry` | `generate_lathe_part()` |
+| Turbine (assembly) | `TurbineDefinition` | `generate_turbine_assembly()` |
 
 **Planned additions (3D):**
 
@@ -190,7 +228,6 @@ procedural layouts, and scientific rendering.
 | Loft / Skin | Interpolate mesh surface between multiple profile cross-sections |
 | Sweep along arbitrary path | Generalized Tube — sweep any profile along any 3D curve |
 | Multi-LOD terrain | Quadtree-chunked heightmap with variable resolution |
-| Procedural noise heightmap | Generate heightmap data from noise functions (Perlin, simplex, Worley) |
 
 ## 5. Mesh Operations
 
@@ -276,6 +313,7 @@ include/exd/geometry/
 ├── extrusion.hpp            # Extrusion, Lathe, Helix
 ├── deform.hpp               # DeformDescriptor (bend, twist, taper, noise)
 ├── heightmap.hpp            # Heightmap → terrain mesh
+├── part.hpp                 # Part/Patch/Assembly modelling layer
 └── geometry.hpp             # Umbrella header (includes all of the above)
 
 src/
@@ -301,6 +339,8 @@ src/
 │   └── heightmap.cpp
 ├── deform/
 │   └── deform.cpp
+├── part/
+│   └── part.cpp              # Part/Patch/Assembly helpers + ops
 ├── gizmos/
 │   ├── gizmo_internal.hpp        # Private mesh helpers (not installed)
 │   ├── gizmo_internal.cpp

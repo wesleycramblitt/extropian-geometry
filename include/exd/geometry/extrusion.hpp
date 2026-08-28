@@ -1,6 +1,7 @@
 #pragma once
 
 #include <exd/geometry/types.hpp>
+#include <exd/geometry/part.hpp>
 #include <exd/math/vec3.hpp>
 
 #include <vector>
@@ -40,6 +41,10 @@ struct LatheGeometry
 };
 
 MeshData generate_lathe_mesh(const LatheGeometry& geometry);
+
+// ── Part generators (native BC patches) ──
+Part generate_extrusion_part(const ExtrusionGeometry& geometry); // wall, cap_start (-Z), cap_end (+Z)
+Part generate_lathe_part(const LatheGeometry& geometry);         // surface, cap_start/cap_end (profile ends)
 
 // ── Helix / Spring ──
 

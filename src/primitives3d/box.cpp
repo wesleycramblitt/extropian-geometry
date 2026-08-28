@@ -1,5 +1,6 @@
 #include <exd/geometry/primitives3d.hpp>
 #include <exd/geometry/mesh_builder.hpp>
+#include <exd/geometry/part.hpp>
 
 namespace exd::geometry
 {
@@ -45,6 +46,18 @@ MeshData generate_box_mesh(const BoxGeometry& geom)
     }
 
     return builder.build();
+}
+
+Part generate_box_part(const BoxGeometry& geom)
+{
+    Part part = as_part("box", generate_box_mesh(geom));
+    if (part.mesh.vertices.empty())
+        return part;
+
+    static const char* faceNames[] = {"+x", "-x", "+y", "-y", "+z", "-z"};
+    for (uint32_t i = 0; i < 6; ++i)
+        part.patches.push_back(Patch{faceNames[i], {2u * i, 2u * i + 1u}});
+    return part;
 }
 
 } // namespace exd::geometry

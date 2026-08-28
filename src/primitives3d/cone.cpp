@@ -1,4 +1,5 @@
 #include <exd/geometry/primitives3d.hpp>
+#include <exd/geometry/part.hpp>
 
 #include <cmath>
 
@@ -112,6 +113,19 @@ MeshData generate_cone_mesh(const ConeGeometry& geometry)
     mesh.bounds   = {{-radius, -halfH, -radius}, {radius, halfH, radius}};
 
     return mesh;
+}
+
+Part generate_cone_part(const ConeGeometry& geometry)
+{
+    Part part = as_part("cone", generate_cone_mesh(geometry));
+    if (part.mesh.vertices.empty())
+        return part;
+
+    const uint32_t S = geometry.slices < 3 ? 3 : geometry.slices;
+    part.patches.push_back(make_patch_range("wall", 0, S));
+    if (geometry.capped)
+        part.patches.push_back(make_patch_range("cap_start", S, S));
+    return part;
 }
 
 } // namespace exd::geometry

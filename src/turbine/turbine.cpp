@@ -2,12 +2,14 @@
 
 #include <exd/geometry/extrusion.hpp>
 #include <exd/geometry/mesh_ops.hpp>
+#include <exd/geometry/part.hpp>
 #include <exd/geometry/spline.hpp>
 
 #include <array>
 #include <cmath>
 #include <limits>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 namespace exd::geometry
@@ -192,9 +194,18 @@ std::vector<math::Vec2f> generate_blade_section_profile(
     return loop;
 }
 
-MeshData generate_blade_row_mesh(const BladeRow& row, const FlowPath& flow,
-                                 uint32_t revolve_segments)
+/// Builds row mesh; optionally records per-blade triangle counts
+/// (skin, hub cap, shroud cap) needed for patch construction.
+static MeshData build_blade_row_impl(const BladeRow& row, const FlowPath& flow,
+                                     uint32_t revolve_segments,
+                                     uint32_t* outSkinPerBlade,
+                                     uint32_t* outHubPerBlade,
+                                     uint32_t* outShroudPerBlade)
 {
+    if (outSkinPerBlade)   *outSkinPerBlade   = 0;
+    if (outHubPerBlade)    *outHubPerBlade    = 0;
+    if (outShroudPerBlade) *outShroudPerBlade = 0;
+
     (void)revolve_segments;
 
     std::vector<BladeSection> sections = row.sections;
@@ -254,10 +265,12 @@ MeshData generate_blade_row_mesh(const BladeRow& row, const FlowPath& flow,
         for (uint32_t j = 0; j < n; ++j) {
             const uint32_t j1 = (j + 1) % n;
             acc.quad(loops[i][j], loops[i][j1], loops[i + 1][j1], loops[i + 1][j]);
+            if (outSkinPerBlade) *outSkinPerBlade += 2;
         }
     }
 
     // End caps (hub + shroud) via centroid triangle fan.
+    std::size_t capLoopIdx = 0;
     for (const std::vector<uint32_t>& loop : {loops.front(), loops.back()}) {
         math::Vec3f centroid{0.0f, 0.0f, 0.0f};
         for (const uint32_t v : loop) centroid += acc.pos[v];
@@ -266,7 +279,13 @@ MeshData generate_blade_row_mesh(const BladeRow& row, const FlowPath& flow,
         for (uint32_t j = 0; j < n; ++j) {
             const uint32_t j1 = (j + 1) % n;
             acc.tri(c, loop[j1], loop[j]);
+            if (capLoopIdx == 0) {
+                if (outHubPerBlade) ++(*outHubPerBlade);
+            } else {
+                if (outShroudPerBlade) ++(*outShroudPerBlade);
+            }
         }
+        ++capLoopIdx;
     }
 
     MeshData blade = acc.build();
@@ -283,9 +302,99 @@ MeshData generate_blade_row_mesh(const BladeRow& row, const FlowPath& flow,
     return merge_meshes(blades);
 }
 
+MeshData generate_blade_row_mesh(const BladeRow& row, const FlowPath& flow,
+                                 uint32_t revolve_segments)
+{
+    return build_blade_row_impl(row, flow, revolve_segments, nullptr, nullptr, nullptr);
+}
+
+MeshData generate_hub_mesh(const HubDefinition& hub_cfg, uint32_t revolve_segments)
+{
+    if (hub_cfg.shape == HubShape::None) return {};
+
+    const float R  = std::max(hub_cfg.root_radius, 1e-4f);
+    const float Lf = std::max(hub_cfg.front_length, 0.0f);
+    const float La = std::max(hub_cfg.aft_length, 0.0f);
+    if (Lf <= 0.0f && La <= 0.0f) return {};
+
+    const uint32_t n = std::max(4u, hub_cfg.profile_points);
+
+    // Meridional profile (x = r, y = z), ordered aft -> front so the lathe
+    // puts the flat cap on the aft end (-Z) and the nose toward +Z.
+    std::vector<math::Vec3f> profile;
+
+    switch (hub_cfg.shape) {
+    case HubShape::Cylinder: {
+        profile.push_back({R, -La, 0.0f});
+        profile.push_back({R,  Lf, 0.0f});
+        break;
+    }
+    case HubShape::FlatDisk: {
+        const float t = std::clamp(0.06f * R, 0.02f, 0.25f);
+        profile.push_back({R, -t, 0.0f});
+        profile.push_back({R,  t, 0.0f});
+        break;
+    }
+    case HubShape::Spinner:
+    case HubShape::Bullet: {
+        // Body: straight cylinder from the aft end to the rotor plane.
+        if (La > 0.0f) profile.push_back({R, -La, 0.0f});
+        profile.push_back({R, 0.0f, 0.0f});
+        // Nose: ellipsoid dome (Spinner) or power-law ogive (Bullet).
+        if (Lf > 0.0f) {
+            const float p = (hub_cfg.shape == HubShape::Bullet)
+                                ? std::clamp(hub_cfg.nose_power, 0.2f, 1.0f)
+                                : 2.0f;   // squared = half-ellipse for Spinner
+            for (uint32_t i = 1; i <= n; ++i) {
+                const float f = static_cast<float>(i) / static_cast<float>(n);
+                const float z = Lf * f;
+                const float r = (hub_cfg.shape == HubShape::Bullet)
+                                    ? R * std::pow(1.0f - f, p)
+                                    : R * std::sqrt(1.0f - f * f);
+                profile.push_back({r, z, 0.0f});
+            }
+        }
+        break;
+    }
+    case HubShape::Tapered: {
+        // Aft taper from the trailing end (aft_radius, 0 = point) to the
+        // rotor plane at root radius.
+        if (La > 0.0f) {
+            for (uint32_t i = 0; i < n; ++i) {
+                const float f = static_cast<float>(i) / static_cast<float>(n);
+                profile.push_back({R + (hub_cfg.aft_radius - R) * f, -La + La * f, 0.0f});
+            }
+        }
+        profile.push_back({R, 0.0f, 0.0f});
+        // Nose taper to a point at +Lf.
+        if (Lf > 0.0f) {
+            for (uint32_t i = 1; i <= n; ++i) {
+                const float f = static_cast<float>(i) / static_cast<float>(n);
+                profile.push_back({R * (1.0f - f), Lf * f, 0.0f});
+            }
+        }
+        break;
+    }
+    case HubShape::None:
+    default:
+        return {};
+    }
+
+    LatheGeometry lathe;
+    lathe.profile  = std::move(profile);
+    lathe.axis     = LatheAxis::Z;
+    lathe.segments = std::max(8u, revolve_segments);
+    lathe.capped   = true;
+    return generate_lathe_mesh(lathe);
+}
+
 MeshData generate_turbine_mesh(const TurbineDefinition& turbine)
 {
     std::vector<MeshData> parts;
+    if (turbine.hub.shape != HubShape::None) {
+        MeshData hub = generate_hub_mesh(turbine.hub, turbine.revolve_segments);
+        if (!hub.vertices.empty()) parts.push_back(std::move(hub));
+    }
     MeshData flow_path = generate_flow_path_mesh(turbine.flow_path, turbine.revolve_segments);
     if (!flow_path.vertices.empty()) parts.push_back(std::move(flow_path));
     for (const BladeRow& row : turbine.blade_rows) {
@@ -294,6 +403,70 @@ MeshData generate_turbine_mesh(const TurbineDefinition& turbine)
     }
     if (parts.empty()) return {};
     return merge_meshes(parts);
+}
+
+Assembly generate_turbine_assembly(const TurbineDefinition& turbine)
+{
+    Assembly asm_;
+    auto push_part = [&](std::string name, MeshData mesh) {
+        if (mesh.vertices.empty()) return;
+        Part p = as_part(std::move(name), std::move(mesh));
+        if (!p.mesh.vertices.empty())
+            p.patches.push_back(make_patch_range("surface", 0, uint32_t(p.mesh.indices.size() / 3)));
+        asm_.parts.push_back(std::move(p));
+    };
+
+    push_part("hub", generate_hub_mesh(turbine.hub, turbine.revolve_segments));
+    push_part("flow_path", generate_flow_path_mesh(turbine.flow_path, turbine.revolve_segments));
+
+    static const char* roleNames[] = {"stator", "rotor", "nozzle", "diffuser"};
+
+    for (size_t i = 0; i < turbine.blade_rows.size(); ++i) {
+        const BladeRow& row = turbine.blade_rows[i];
+        uint32_t skin = 0, hub = 0, shroud = 0;
+        MeshData mesh = build_blade_row_impl(row, turbine.flow_path, turbine.revolve_segments,
+                                             &skin, &hub, &shroud);
+        if (mesh.vertices.empty()) continue;
+
+        Part p = as_part(std::string(roleNames[(int)row.type]) + "_" + std::to_string(i),
+                         std::move(mesh));
+
+        // Each blade in the row contributes (skin + hub + shroud) triangles in
+        // fixed sub-ranges: [skin), [hub), [shroud).
+        const uint32_t stride = skin + hub + shroud;
+        const uint32_t blades = uint32_t(p.mesh.indices.size() / 3) / stride;
+        std::vector<uint32_t> skinFaces, hubFaces, shroudFaces;
+        for (uint32_t k = 0; k < blades; ++k) {
+            for (uint32_t f = 0; f < skin;   ++f) skinFaces.push_back(k * stride + f);
+            for (uint32_t f = 0; f < hub;    ++f) hubFaces.push_back(k * stride + skin + f);
+            for (uint32_t f = 0; f < shroud; ++f) shroudFaces.push_back(k * stride + skin + hub + f);
+        }
+        p.patches.push_back({"blade_surface", std::move(skinFaces)});
+        p.patches.push_back({"hub_cap", std::move(hubFaces)});
+        p.patches.push_back({"shroud_cap", std::move(shroudFaces)});
+        asm_.parts.push_back(std::move(p));
+    }
+
+    // Union of bounds over all part meshes (skip empty meshes; empty → Bounds{}).
+    asm_.bounds = {};
+    bool have = false;
+    for (const Part& part : asm_.parts) {
+        if (part.mesh.vertices.empty()) continue;
+        const Bounds b = compute_bounds(part.mesh.vertices);
+        if (!have) {
+            asm_.bounds = b;
+            have = true;
+        } else {
+            asm_.bounds.min.x = std::min(asm_.bounds.min.x, b.min.x);
+            asm_.bounds.min.y = std::min(asm_.bounds.min.y, b.min.y);
+            asm_.bounds.min.z = std::min(asm_.bounds.min.z, b.min.z);
+            asm_.bounds.max.x = std::max(asm_.bounds.max.x, b.max.x);
+            asm_.bounds.max.y = std::max(asm_.bounds.max.y, b.max.y);
+            asm_.bounds.max.z = std::max(asm_.bounds.max.z, b.max.z);
+        }
+    }
+
+    return asm_;
 }
 
 } // namespace exd::geometry

@@ -11,6 +11,7 @@ shaping additionally uses FreeType + HarfBuzz.
 - **3D primitives** — sphere, box, cylinder, plane, capsule, icosahedron,
   torus, cone, tube, disk, arrow, axes, billboard, ellipsoid.
 - **Mesh ops** — merge, transform, bounds; incremental `MeshBuilder`.
+- **Parts & patches** — `Part`/`Patch`/`Assembly` with labelled face sets for boundary conditions; native patches on cylinder/cone/box/extrusion/lathe; turbine assemblies with per-row patched parts.
 - **Path / blend / SDF** — path following, signed-distance-field blending,
   marching cubes, extrusion, heightmaps, deformation.
 - **Gizmos** — per-part translation/rotation/scale interaction gizmos plus

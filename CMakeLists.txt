@@ -65,6 +65,7 @@ add_library(exd-geometry STATIC
     src/primitives2d/star.cpp
     src/primitives2d/regular_polygon.cpp
     src/path/path.cpp
+    src/part/part.cpp
     src/blend/blend.cpp
     src/blend/sdf_primitives.cpp
     src/blend/marching_cubes.cpp
