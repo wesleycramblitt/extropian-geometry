@@ -71,6 +71,12 @@ add_library(exd-geometry STATIC
     src/extrusion/extrusion.cpp
     src/heightmap/heightmap.cpp
     src/deform/deform.cpp
+    src/gizmos/gizmo_internal.cpp
+    src/gizmos/gizmo_parts.cpp
+    src/gizmos/translation_gizmo.cpp
+    src/gizmos/rotation_gizmo.cpp
+    src/gizmos/scale_gizmo.cpp
+    src/gizmos/deform_gizmos.cpp
 )
 
 add_library(exd::geometry ALIAS exd-geometry)

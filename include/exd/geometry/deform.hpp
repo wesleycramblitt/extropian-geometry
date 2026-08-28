@@ -16,9 +16,13 @@ struct DeformDescriptor
 {
     // Bend
     bool   bend    = false;
-    float  bendAngle = 0.0f;       // radians, total bend angle
-    float  bendRadius = 1.0f;      // radius of the bend arc
+    float  bendAngle = 0.0f;       // radians, total bend angle across the object
+    float  bendRadius = 1.0f;      // radius of the bend arc (the circle the spine
+                                   // follows); the bend is isometric (no axial
+                                   // stretch) when bendRadius = 2*maxExtent/bendAngle,
+                                   // where maxExtent is the object's maximum half-extent
     math::Vec3f bendAxis = {0, 1, 0}; // axis to bend around
+    math::Vec3f bendDirection = {0, 0, 0}; // bend plane direction; auto-picked when zero-length
 
     // Twist
     bool   twist   = false;

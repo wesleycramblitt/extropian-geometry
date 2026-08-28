@@ -168,23 +168,38 @@ TEST_CASE("heightmap: data size mismatch returns empty")
 
 TEST_CASE("deform: bend produces curved mesh")
 {
-    auto box = generate_box_mesh({.size = {0.2f, 2.0f, 0.2f}});
+    auto box = generate_box_mesh({.size = {0.3f, 2.0f, 0.3f}});
     DeformDescriptor d;
     d.bend = true;
     d.bendAngle = 1.57079632679f;
     d.bendRadius = 1.0f;
-    d.bendAxis = {0, 0, 1};
+    d.bendAxis = {0, 1, 0};
+    d.bendDirection = {0, 0, 1};
 
     auto bent = deform_mesh(box, d);
     CHECK(!bent.vertices.empty());
     CHECK(bent.vertices.size() == box.vertices.size());
 
-    bool displaced = false;
+    // (a) Box-end vertices (|y| > 0.9) lie on the bend circle centered at
+    //     -R*u = (0, 0, -1), i.e. |p - (0,0,-1)| ≈ 1 within epsilon 0.05.
+    const exd::math::Vec3f circleCenter = {0.0f, 0.0f, -1.0f};
     for (size_t i = 0; i < box.vertices.size(); ++i) {
-        if ((bent.vertices[i].position - box.vertices[i].position).length() > 0.01f)
-            displaced = true;
+        if (std::abs(box.vertices[i].position.y) > 0.9f) {
+            float dist = (bent.vertices[i].position - circleCenter).length();
+            CHECK(dist == doctest::Approx(d.bendRadius).epsilon(0.05f));
+        }
     }
-    CHECK(displaced);
+
+    // (b) The origin stays fixed: inject an origin vertex and verify it is unmoved.
+    MeshData withOrigin = box;
+    exd::core::Vertex originVertex;
+    originVertex.position = {0.0f, 0.0f, 0.0f};
+    withOrigin.vertices.push_back(originVertex);
+    auto bentOrigin = deform_mesh(withOrigin, d);
+    CHECK((bentOrigin.vertices.back().position).length() < 0.01f);
+
+    // (c) Vertex count unchanged.
+    CHECK(bent.vertices.size() == box.vertices.size());
 }
 
 TEST_CASE("deform: twist rotates vertices")

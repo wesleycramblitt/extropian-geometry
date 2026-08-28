@@ -138,6 +138,10 @@ parallel API surface, works identically everywhere.
 | Arrow3D | `Arrow3DGeometry` | `generate_arrow3d_mesh()` |
 | Axes (RGB) | `AxesGeometry` | `generate_axes_mesh()` |
 | Billboard | `BillboardGeometry` | `generate_billboard_mesh()` |
+| Translation Gizmo | `TranslationGizmoGeometry` | `generate_translation_gizmo()` |
+| Rotation Gizmo | `RotationGizmoGeometry` | `generate_rotation_gizmo()` |
+| Scale Gizmo | `ScaleGizmoGeometry` | `generate_scale_gizmo()` |
+| Bend/Twist/Taper/Lattice gizmos | `Bend/Twist/Taper`...`Geometry`, `LatticeCageGeometry` | `generate_*_gizmo()` |
 
 **Planned additions (3D):**
 
@@ -295,8 +299,16 @@ src/
 │   └── extrusion.cpp
 ├── heightmap/
 │   └── heightmap.cpp
-└── deform/
-    └── deform.cpp
+├── deform/
+│   └── deform.cpp
+├── gizmos/
+│   ├── gizmo_internal.hpp        # Private mesh helpers (not installed)
+│   ├── gizmo_internal.cpp
+│   ├── gizmo_parts.cpp           # merge/filter GizmoParts
+│   ├── translation_gizmo.cpp     # per-part translate/scale/rotate gizmos
+│   ├── rotation_gizmo.cpp
+│   ├── scale_gizmo.cpp
+│   └── deform_gizmos.cpp         # bend/twist/taper/lattice widgets
 
 demo/
 ├── CMakeLists.txt
@@ -513,7 +525,8 @@ RGBA vector. A dedicated `Color` or `Vec4f` type may replace this in the future.
 an immutable geometry descriptor struct (with all-defaulted fields) is passed to a
 free function that returns `MeshData` by value. Descriptors are never mutated by
 generators. This keeps the API flat, avoids virtual dispatch, and makes chaining
-trivial.
+trivial. Gizmos extend the pattern by returning `GizmoParts` (per-section meshes
+for picking/highlighting) instead of a single `MeshData`.
 
 **PIMPL for heavy dependencies.** `Path2D` and `FontAtlas` hide their implementation
 behind `std::unique_ptr<Impl>`. This prevents FreeType, HarfBuzz, and tessellation

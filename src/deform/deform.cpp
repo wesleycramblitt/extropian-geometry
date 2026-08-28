@@ -45,22 +45,28 @@ MeshData deform_mesh(const MeshData& mesh, const DeformDescriptor& desc)
             if (axLen < 1e-8f) ax = {0, 1, 0};
             else ax = ax / axLen;
 
+            // Bend plane direction u: explicit, or auto-picked perpendicular to ax
+            math::Vec3f u = desc.bendDirection;
+            if (u.length() > 1e-6f) {
+                u = u.normalized();
+            } else {
+                math::Vec3f ref = {0, 1, 0};
+                if (std::abs(ax.dot(ref)) > 0.999f) ref = {0, 0, 1};
+                u = (ref - ax * ref.dot(ax)).normalized();
+            }
+            math::Vec3f w = ax.cross(u); // unit, since ax ⊥ u
+
             float t = p.dot(ax) / maxExtent; // normalized [-1, 1]
-            float radius = desc.bendRadius;
-            float angle = t * desc.bendAngle;
-            float ca = std::cos(angle), sa = std::sin(angle);
+            float theta = t * desc.bendAngle * 0.5f;
+            float ca = std::cos(theta), sa = std::sin(theta);
 
-            // Radial distance from axis
+            // Point on the bend-arc circle (through origin, tangent to ax at
+            // origin, lying in the plane (u, ax)).
+            math::Vec3f spine = desc.bendRadius * (u * (ca - 1.0f) + ax * sa);
+
+            // Radial offset from the axis, transported rigidly (rotation around w)
             math::Vec3f radial = p - ax * p.dot(ax);
-            float radDist = radial.length();
-
-            // Bend: rotate radial vector around perpendicular axis
-            math::Vec3f rotAxis = ax.cross(radial);
-            if (rotAxis.length() < 1e-8f) rotAxis = {0, 0, 1};
-            rotAxis = rotAxis / rotAxis.length();
-
-            math::Vec3f bent = radial * ca + rotAxis.cross(radial) * sa;
-            p = ax * (t * maxExtent) + bent * (radius / maxExtent);
+            p = spine + radial * ca + w.cross(radial) * sa;
         }
 
         // ── Twist ──

@@ -13,6 +13,8 @@ shaping additionally uses FreeType + HarfBuzz.
 - **Mesh ops** — merge, transform, bounds; incremental `MeshBuilder`.
 - **Path / blend / SDF** — path following, signed-distance-field blending,
   marching cubes, extrusion, heightmaps, deformation.
+- **Gizmos** — per-part translation/rotation/scale interaction gizmos plus
+  bend/twist/taper/lattice deform gizmos (GizmoParts).
 - **Text** — FreeType/HarfBuzz glyph meshing and font handling.
 
 ## Build
