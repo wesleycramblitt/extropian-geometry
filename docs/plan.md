@@ -108,6 +108,7 @@ interaction workflows (boundary-condition unit = face set = "patch"):
   | Box | `+x`, `-x`, `+y`, `-y`, `+z`, `-z` |
   | Extrusion | `wall`, `cap_start` (-Z), `cap_end` (+Z) |
   | Lathe | `surface`, `cap_start`/`cap_end` (profile ends) |
+  | Loft | `wall`, `cap_start`, `cap_end` |
 
 - **Contract.** Engineering generators (multi-region machines, e.g. turbine)
   MUST expose a `generate_*_assembly()` returning named `Part`s with boundary
@@ -242,6 +243,9 @@ All are pure functions — input unchanged, new output returned.
 | Transform | `transform_mesh()` | Apply 4x4 matrix to positions and normals |
 | Bounds | `compute_bounds()` | Compute AABB from vertex positions |
 | Build | `MeshBuilder` | Incremental construction (add vertex, triangle, quad) |
+| Triangulate | `triangulate_polygon()` | Concave polygons + holes |
+| Weld | `weld_vertices()` | Distance-threshold vertex merging |
+| Recompute normals | `recompute_normals()` | Flat / Smooth modes |
 
 **Planned:**
 
@@ -314,6 +318,7 @@ include/exd/geometry/
 ├── deform.hpp               # DeformDescriptor (bend, twist, taper, noise)
 ├── heightmap.hpp            # Heightmap → terrain mesh
 ├── part.hpp                 # Part/Patch/Assembly modelling layer
+├── loft.hpp                # Loft/skin operator
 └── geometry.hpp             # Umbrella header (includes all of the above)
 
 src/
@@ -343,6 +348,7 @@ src/
 │   └── part.cpp              # Part/Patch/Assembly helpers + ops
 ├── gizmos/
 │   ├── gizmo_internal.hpp        # Private mesh helpers (not installed)
+│   ├── part.cpp                  # Part/Patch/Assembly helpers
 │   ├── gizmo_internal.cpp
 │   ├── gizmo_parts.cpp           # merge/filter GizmoParts
 │   ├── translation_gizmo.cpp     # per-part translate/scale/rotate gizmos

@@ -10,6 +10,9 @@
 // ── Parts & assemblies ──
 #include <exd/geometry/part.hpp>
 
+// ── Loft ──
+#include <exd/geometry/loft.hpp>
+
 // ── Generators ──
 #include <exd/geometry/primitives2d.hpp>
 #include <exd/geometry/primitives3d.hpp>

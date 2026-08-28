@@ -71,6 +71,7 @@ add_library(exd-geometry STATIC
     src/blend/marching_cubes.cpp
     src/extrusion/extrusion.cpp
     src/heightmap/heightmap.cpp
+    src/loft/loft.cpp
     src/deform/deform.cpp
     src/gizmos/gizmo_internal.cpp
     src/gizmos/gizmo_parts.cpp
