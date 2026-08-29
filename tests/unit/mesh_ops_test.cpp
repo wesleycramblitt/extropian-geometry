@@ -2,9 +2,11 @@
 #include <exd/geometry/geometry.hpp>
 #include <exd/math/mat4.hpp>
 
+#include <map>
 #include <span>
 
 using namespace exd::geometry;
+using namespace exd::math;
 
 // ── compute_bounds ─────────────────────────────────────────────────────────
 
@@ -567,4 +569,310 @@ TEST_CASE("normals: empty")
     auto out = recompute_normals(empty);
     CHECK(out.vertices.empty());
     CHECK(out.indices.empty());
+}
+
+// ── Boolean (CSG) ──────────────────────────────────────────────────────────
+
+namespace
+{
+
+float tri_area(const MeshData& m, size_t t)
+{
+    const auto& a = m.vertices[m.indices[3 * t]].position;
+    const auto& b = m.vertices[m.indices[3 * t + 1]].position;
+    const auto& c = m.vertices[m.indices[3 * t + 2]].position;
+    return 0.5f * (b - a).cross(c - a).length();
+}
+
+float sum_tri_area(const MeshData& m)
+{
+    float s = 0.0f;
+    for (size_t t = 0; t < m.indices.size() / 3; ++t)
+        s += tri_area(m, t);
+    return s;
+}
+
+// Watertight helper: position-canonicalized undirected edge count == 2 for
+// every edge. (Directed opposition is optional for the test helper.)
+bool watertight(const MeshData& m)
+{
+    if (m.vertices.empty() || m.indices.empty() || m.indices.size() % 3 != 0)
+        return false;
+
+    constexpr float kCanonEps = 1e-6f;
+    std::vector<uint32_t> canon(m.vertices.size());
+    std::vector<uint32_t> reps;
+    for (size_t i = 0; i < m.vertices.size(); ++i)
+    {
+        uint32_t keeper = UINT32_MAX;
+        for (size_t j = 0; j < reps.size(); ++j)
+        {
+            if ((m.vertices[reps[j]].position - m.vertices[i].position).length() <= kCanonEps)
+            {
+                keeper = static_cast<uint32_t>(j);
+                break;
+            }
+        }
+        if (keeper == UINT32_MAX)
+        {
+            keeper = static_cast<uint32_t>(reps.size());
+            reps.push_back(static_cast<uint32_t>(i));
+        }
+        canon[i] = keeper;
+    }
+
+    struct EK
+    {
+        uint32_t a, b;
+        bool operator<(const EK& o) const { return a != o.a ? a < o.a : b < o.b; }
+    };
+    std::map<EK, int> edges;
+    for (size_t t = 0; t < m.indices.size(); t += 3)
+    {
+        const uint32_t a = canon[m.indices[t]];
+        const uint32_t b = canon[m.indices[t + 1]];
+        const uint32_t c = canon[m.indices[t + 2]];
+        auto add = [&](uint32_t x, uint32_t y)
+        {
+            edges[{std::min(x, y), std::max(x, y)}]++;
+        };
+        add(a, b);
+        add(b, c);
+        add(c, a);
+    }
+    for (const auto& kv : edges)
+        if (kv.second != 2)
+            return false;
+    return true;
+}
+
+bool bounds_close(const Bounds& a, const Bounds& b, float eps)
+{
+    return (a.min - b.min).length() <= eps && (a.max - b.max).length() <= eps;
+}
+
+bool meshes_identical(const MeshData& r, const MeshData& a)
+{
+    if (r.vertices.size() != a.vertices.size())
+        return false;
+    if (r.indices != a.indices)
+        return false;
+    for (size_t i = 0; i < r.vertices.size(); ++i)
+    {
+        const Vertex& u = r.vertices[i];
+        const Vertex& v = a.vertices[i];
+        if (u.position != v.position)
+            return false;
+        if (u.normal != v.normal)
+            return false;
+        if (u.uv != v.uv)
+            return false;
+        if (u.tangent.w != v.tangent.w || u.tangent.x != v.tangent.x ||
+            u.tangent.y != v.tangent.y || u.tangent.z != v.tangent.z)
+            return false;
+        if (u.color.w != v.color.w || u.color.x != v.color.x ||
+            u.color.y != v.color.y || u.color.z != v.color.z)
+            return false;
+    }
+    return true;
+}
+
+MeshData box_centered(const Vec3f& size, const Vec3f& center)
+{
+    BoxGeometry bg;
+    bg.size = size;
+    auto box = generate_box_mesh(bg);
+    if (center.x == 0.0f && center.y == 0.0f && center.z == 0.0f)
+        return box;
+    Mat4 t = Mat4::identity();
+    t.m[12] = center.x;
+    t.m[13] = center.y;
+    t.m[14] = center.z;
+    return transform_mesh(box, t);
+}
+
+} // namespace
+
+TEST_CASE("boolean: intersect of two offset boxes")
+{
+    // A spans [-1,1]^3 (default generator output is un-welded: 24 verts).
+    auto a = box_centered({2, 2, 2}, {0, 0, 0});
+    REQUIRE(a.vertices.size() == 24);
+    REQUIRE(a.indices.size() == 36);
+    // B spans [0.5,2.5] x [-0.5,1.5] x [-0.5,1.5]. Shifted in y/z so that no
+    // face plane of B coincides with a face plane of A (coplanar overlap is a
+    // documented V1 limitation and is tested separately).
+    auto b = box_centered({2, 2, 2}, {1.5f, 0.5f, 0.5f});
+    REQUIRE(b.vertices.size() == 24);
+
+    auto r = boolean_mesh(a, b, BooleanOp::Intersect);
+    REQUIRE(!r.vertices.empty());
+    CHECK(watertight(r));
+
+    // Overlap region: x[0.5,1] x [-0.5,1] x [-0.5,1] (0.5 x 1.5 x 1.5).
+    Bounds exp;
+    exp.min = {0.5f, -0.5f, -0.5f};
+    exp.max = {1.0f, 1.0f, 1.0f};
+    CHECK(bounds_close(r.bounds, exp, 1e-3f));
+
+    // Surface of the overlap box = 2*(0.5*1.5 + 0.5*1.5 + 1.5*1.5) = 7.5.
+    CHECK(std::abs(sum_tri_area(r) - 7.5f) < 1e-3f);
+    CHECK(r.indices.size() / 3 > 6);
+}
+
+TEST_CASE("boolean: union of two offset boxes")
+{
+    auto a = box_centered({2, 2, 2}, {0, 0, 0});
+    auto b = box_centered({2, 2, 2}, {1.5f, 0.5f, 0.5f});
+
+    auto r = boolean_mesh(a, b, BooleanOp::Union);
+    REQUIRE(!r.vertices.empty());
+    CHECK(watertight(r));
+
+    // Union bounds: A x[-1,1] ∪ B x[0.5,2.5] → [-1,2.5]; y[-1,1.5]; z[-1,1.5].
+    Bounds exp;
+    exp.min = {-1.0f, -1.0f, -1.0f};
+    exp.max = {2.5f, 1.5f, 1.5f};
+    CHECK(bounds_close(r.bounds, exp, 1e-3f));
+}
+
+TEST_CASE("boolean: subtract box minus box")
+{
+    // A [-1,1]^3, B fully inside A: [-0.25,0.75] x [-0.5,0.5] x [-0.5,0.5]
+    // (no face of B is coplanar with a face of A).
+    auto a = box_centered({2, 2, 2}, {0, 0, 0});
+    auto b = box_centered({1, 1, 1}, {0.25f, 0.0f, 0.0f});
+
+    auto r = boolean_mesh(a, b, BooleanOp::Subtract);
+    REQUIRE(!r.vertices.empty());
+    CHECK(watertight(r));
+    // The carve is fully internal: the result bounds match A's solid extent.
+    Bounds expA;
+    expA.min = {-1.0f, -1.0f, -1.0f};
+    expA.max = {1.0f, 1.0f, 1.0f};
+    CHECK(bounds_close(r.bounds, expA, 1e-3f));
+
+    // Result surface = A outer surface (24) + cavity walls of the 1x1x1
+    // removed cube (2*(1*1 + 1*1 + 1*1) = 6) = 30.
+    CHECK(std::abs(sum_tri_area(r) - 30.0f) < 1e-3f);
+}
+
+TEST_CASE("boolean: subtract cavity normals point inward")
+{
+    auto a = box_centered({2, 2, 2}, {0, 0, 0});
+    auto b = box_centered({1, 1, 1}, {0.25f, 0.0f, 0.0f});
+    auto r = boolean_mesh(a, b, BooleanOp::Subtract);
+    REQUIRE(!r.vertices.empty());
+
+    const Vec3f cavityCenter{0.25f, 0.0f, 0.0f};
+    int wallTris = 0;
+    for (size_t t = 0; t < r.indices.size() / 3; ++t)
+    {
+        const Vec3f& pa = r.vertices[r.indices[3 * t]].position;
+        const Vec3f& pb = r.vertices[r.indices[3 * t + 1]].position;
+        const Vec3f& pc = r.vertices[r.indices[3 * t + 2]].position;
+        const Vec3f c = (pa + pb + pc) * (1.0f / 3.0f);
+        // Retained triangle whose centroid lies inside the original B box.
+        if (c.x > -0.26f && c.x < 0.76f && std::abs(c.y) < 0.52f && std::abs(c.z) < 0.52f)
+        {
+            ++wallTris;
+            const Vec3f n = (pb - pa).cross(pc - pa).normalized();
+            // Geometric normal must point toward the cavity center (inward).
+            const Vec3f to = (cavityCenter - c).normalized();
+            CHECK(n.dot(to) >= -1e-3f);
+        }
+    }
+    CHECK(wallTris > 0);
+}
+
+TEST_CASE("boolean: disjoint subtract identical")
+{
+    // Pre-welded A so the post-assembly weld is a no-op and the short-circuit
+    // path returns an exact copy (vertex/index identity preserved).
+    BoxGeometry bg;
+    bg.size = {2, 2, 2};
+    auto a = weld_vertices(generate_box_mesh(bg), 1e-3f);
+    REQUIRE(a.vertices.size() == 8);
+    auto b = box_centered({1, 1, 1}, {10.0f, 0.0f, 0.0f});
+
+    auto r = boolean_mesh(a, b, BooleanOp::Subtract);
+    REQUIRE(!r.vertices.empty());
+    CHECK(watertight(r));
+    CHECK(r.vertices.size() == a.vertices.size());
+    CHECK(meshes_identical(r, a));
+}
+
+TEST_CASE("boolean: disjoint union two shells")
+{
+    auto a = box_centered({2, 2, 2}, {0, 0, 0});
+    auto b = box_centered({2, 2, 2}, {10.0f, 0.0f, 0.0f});
+
+    auto r = boolean_mesh(a, b, BooleanOp::Union);
+    REQUIRE(!r.vertices.empty());
+    CHECK(watertight(r));
+    // Disjoint union keeps every face of both shells (12 + 12 triangles;
+    // each generator box has 24 vertices / 36 indices = 12 triangles).
+    CHECK(r.indices.size() / 3 == a.indices.size() / 3 + b.indices.size() / 3);
+
+    Bounds exp;
+    exp.min = {-1.0f, -1.0f, -1.0f};
+    exp.max = {11.0f, 1.0f, 1.0f};
+    CHECK(bounds_close(r.bounds, exp, 1e-3f));
+}
+
+TEST_CASE("boolean: empty on open input")
+{
+    auto a = box_centered({2, 2, 2}, {0, 0, 0});
+    auto plane = generate_plane_mesh({});   // open quad → fails the watertight gate
+
+    auto r1 = boolean_mesh(plane, a, BooleanOp::Union);
+    CHECK(r1.vertices.empty());
+    CHECK(r1.indices.empty());
+
+    auto r2 = boolean_mesh(a, plane, BooleanOp::Union);
+    CHECK(r2.vertices.empty());
+    CHECK(r2.indices.empty());
+}
+
+TEST_CASE("boolean: empty on zero volume")
+{
+    auto a = box_centered({2, 2, 2}, {0, 0, 0});
+    // 1e-9-thick box: volume ~1e-9 below the 1e-9*diag^3 zero-volume gate.
+    auto thin = box_centered({1, 1, 1e-9f}, {0.5f, 0.0f, 0.0f});
+
+    auto r = boolean_mesh(a, thin, BooleanOp::Union);
+    CHECK(r.vertices.empty());
+    CHECK(r.indices.empty());
+}
+
+TEST_CASE("boolean: coplanar overlap returns empty")
+{
+    auto a = box_centered({2, 2, 2}, {0, 0, 0});        // y ∈ [-1,1], top face y=1
+    auto b = box_centered({2, 2, 2}, {0, 2.0f, 0.0f});  // y ∈ [1,3], bottom face y=1
+
+    // B's bottom face is exactly coplanar with A's top face and the 2D
+    // projections overlap → documented V1 limitation → {}.
+    auto r = boolean_mesh(a, b, BooleanOp::Union);
+    CHECK(r.vertices.empty());
+    CHECK(r.indices.empty());
+}
+
+TEST_CASE("boolean: canonicalization accepts un-welded inputs")
+{
+    BoxGeometry bg;
+    bg.size = {2, 2, 2};
+    auto a = generate_box_mesh(bg);
+    auto b = generate_box_mesh(bg);
+    REQUIRE(a.vertices.size() == 24);   // default generator output is un-welded
+    REQUIRE(b.vertices.size() == 24);
+
+    // Disjoint B (with a y/z offset); union keeps both shells.
+    auto bShifted = box_centered({2, 2, 2}, {3.0f, 0.5f, 0.5f});
+    auto r = boolean_mesh(a, bShifted, BooleanOp::Union);
+    REQUIRE(!r.vertices.empty());
+    CHECK(watertight(r));
+    // Each box contributes 12 triangles (24 verts / 36 indices); disjoint union
+    // keeps every face of both shells.
+    CHECK(r.indices.size() / 3 == a.indices.size() / 3 + bShifted.indices.size() / 3);
+    CHECK(r.indices.size() / 3 == 24);
 }

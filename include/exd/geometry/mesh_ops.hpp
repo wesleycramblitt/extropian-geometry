@@ -47,6 +47,39 @@ enum class NormalMode
     Smooth  // angle-weighted per-vertex average over incident faces
 };
 
+// ── Boolean (CSG) ──
+
+enum class BooleanOp
+{
+    Union,     // a ∪ b
+    Subtract,  // a − b
+    Intersect  // a ∩ b
+};
+
+/// Boolean operation on two closed, consistently oriented triangle meshes.
+/// Returns an empty MeshData when: either input is empty; either input fails
+/// the closed-manifold gate (boundary edges, non-manifold edges, or
+/// inconsistent directed edge orientation — checked after internal
+/// position-canonicalization, so un-welded generator output is fine); either
+/// input is a zero-volume shell; the two inputs have COPLANAR face overlap
+/// (documented V1 limitation — returns {} rather than emitting holes);
+/// or the assembled result fails the same watertight gate (float failures
+/// return {} instead of garbage).
+/// Patch contract: MeshData-level op. Part patches refer to input triangle
+/// ordinals and do NOT survive; callers re-tag results via tag_faces.
+/// Complexity: O(Ta·Tb) splitting + O(sub-polygons·T) classification (naive;
+/// AABB broad-phase and BVH parity queries are V2). Input self-intersections
+/// are out of contract. All internal tolerances are scale-relative to the
+/// bounding diagonal `diag` (1e-6·diag plane/on-surface, 1e-7·diag position
+/// canonicalization).
+/// weldEpsilon: 0 → auto (1e-4 × the max input diagonal — the auto-weld
+/// distance is approximated by the input bounds since the result bounds are
+/// not known until after assembly); otherwise used directly as the
+/// post-assembly weld distance AND as the classification nudge via
+/// eps_class = weldEpsilon × 0.5.
+MeshData boolean_mesh(const MeshData& a, const MeshData& b, BooleanOp op,
+                      float weldEpsilon = 0.0f);
+
 /// Recompute normals. Flat: vertices split per face. Smooth: vertices kept,
 /// normals averaged (angle-weighted by corner angle). Assumes Triangles
 /// topology. Empty input → empty output.

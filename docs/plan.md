@@ -247,6 +247,7 @@ All are pure functions — input unchanged, new output returned.
 | Triangulate | `triangulate_polygon()` | Concave polygons + holes |
 | Weld | `weld_vertices()` | Distance-threshold vertex merging |
 | Recompute normals | `recompute_normals()` | Flat / Smooth modes |
+| Boolean (CSG) | `boolean_mesh()` | Union / Subtract / Intersect |
 
 **Planned:**
 
@@ -255,7 +256,6 @@ All are pure functions — input unchanged, new output returned.
 | Subdivide | HIGH | Catmull-Clark (quads) and Loop (triangles) subdivision |
 | Recompute normals | HIGH | Smooth (angle-weighted), flat, and area-weighted face normals |
 | Vertex weld | HIGH | Merge vertices within distance threshold, remap indices |
-| Mesh boolean (CSG) | HIGH | Exact union, subtract, intersect on triangle meshes |
 | Simplify / decimate | MEDIUM | Reduce triangle count while preserving shape (LOD) |
 | Convex hull | MEDIUM | QuickHull or gift-wrapping |
 | UV projection | MEDIUM | Planar, cylindrical, spherical automatic UV unwrap |
@@ -267,6 +267,9 @@ All are pure functions — input unchanged, new output returned.
 | Delaunay / Voronoi | LOW | 2D triangulation and Voronoi tessellation of point sets |
 | Mesh repair | LOW | Hole filling, normal flipping, non-manifold cleanup |
 
+
+> Boolean (CSG) V2 roadmap: coplanar-face overlap handling, unified intersection
+> curves (replacing the per-triangle planar arrangement), and AABB/BVH broad-phase.
 
 ## 6. Spatial Queries
 
