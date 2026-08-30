@@ -23,6 +23,17 @@ struct Patch
 };
 
 /// Coarse motion class for a part (scene layer animation + sim export hints).
+/// Body modeling kind for simulation export (deformable-body roadmap).
+enum class PartKind
+{
+    Rigid,       // the default: jointed rigid body
+    Deformable   // soft body: boundary mesh + constitutive params; the
+                 // simulator tetrahedralizes the surface (MJCF 3.x does this
+                 // internally) and welds it to rigid bodies via the part's
+                 // contact patches. FK treats it as a rigid placeholder;
+                 // the deformed state comes back from the simulator.
+};
+
 enum class PartMotion
 {
     Stationary,    // welded to the world / parent (static base)
@@ -38,10 +49,14 @@ enum class PartMotion
 /// contact = true; nothing is assumed).
 struct PartMeta
 {
+    PartKind    kind     = PartKind::Rigid;   // Rigid / Deformable (soft body)
     PartMotion  motion   = PartMotion::Stationary;
     std::string material;                 // empty = default (steel-like)
     float       density  = 1000.0f;       // kg/m³ (water default; override per material)
-    bool        contact  = false;         // opt-in collision export
+    bool        contact  = false;         // opt-in collision export of this part's patches
+    // Deformable constitutive params (used when kind == Deformable)
+    float       youngs_modulus = 0.0f;    // Pa; 0 = simulator default
+    float       poisson        = 0.0f;    // −;  0 = simulator default
 };
 
 /// A named component: its own local-space mesh, BC patches, and solver

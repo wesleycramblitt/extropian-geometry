@@ -92,21 +92,24 @@ MeshData generate_cylinder_mesh(const CylinderGeometry& geometry)
             vertices.push_back(vert);
         }
 
-        // Bottom cap: triangle fan, normal -Y
-        // Bottom ring vertices are at indices 0 .. slices
+        // Bottom cap: triangle fan, normal -Y. Winding opposes the side
+        // wall's bottom-ring traversal (+θ): (center, curr, next) — the
+        // previous (center, next, curr) made the join orientation-
+        // inconsistent and cut the signed volume to 1/3 (see mesh_properties
+        // tests). Authored cap normals are unchanged.
         for (uint32_t i = 0; i < slices; ++i)
         {
             uint32_t center = bottomCapIdx;
-            uint32_t next   = i + 1;  // bottom ring, next
-            uint32_t curr   = i;      // bottom ring, current
+            uint32_t curr   = i;                  // bottom ring, current
+            uint32_t next   = i + 1;              // bottom ring, next
 
             indices.push_back(center);
-            indices.push_back(next);
             indices.push_back(curr);
+            indices.push_back(next);
         }
 
-        // Top cap: triangle fan, normal +Y
-        // Top ring vertices are at indices (slices+1) .. 2*(slices+1)-1
+        // Top cap: triangle fan, normal +Y. Winding opposes the top ring's
+        // −θ traversal: (center, next, curr).
         uint32_t topRingBase = slices + 1;
         for (uint32_t i = 0; i < slices; ++i)
         {
@@ -115,8 +118,8 @@ MeshData generate_cylinder_mesh(const CylinderGeometry& geometry)
             uint32_t next   = topRingBase + i + 1; // top ring, next
 
             indices.push_back(center);
-            indices.push_back(curr);
             indices.push_back(next);
+            indices.push_back(curr);
         }
     }
 

@@ -188,6 +188,14 @@ Yagi (tube) 1, dipole 1, helical 1, phased-array tile (structured repeat) 3.
   travel with the geometry; glTF stays geometry-only for renderers.
 - **Contact labeling** — `PartMeta.contact` (explicit opt-in flag): only
   parts marked `contact = true` export their patches as collision surfaces.
+- **Deformable bodies (Tier 1 shipped: compliance; Tier 2: soft meshes)** —
+  Tier 1: joints carry stiffness/damping/armature/frictionloss (soft
+  interfaces: belts, springs as compliant joints + cosmetic helix); Tier 2:
+  `PartMeta.kind = Deformable` + constitutive params, exported as MJCF
+  `deformable`/`flex` boundary meshes (MuJoCo 3.x tetrahedralizes
+  internally), welded to rigid bodies via the part's contact patches.
+  Deformables are MJCF-only (URDF has no soft-body story). FK treats them
+  as rigid placeholders; deformed state comes back from the simulator.
 
 ## 8. Roadmap phases
 

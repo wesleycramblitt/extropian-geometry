@@ -53,6 +53,16 @@ struct Joint
     float limit_high =  1e30f;
     float effort_max = 1e30f;    // N·m or N
     float velocity_max = 1e30f;  // rad/s or m/s
+
+    // ── Compliance (deformable-body Tier 1: soft interfaces, not soft
+    // meshes) — all 0 = rigid kinematic joint. MJCF joint dynamics; URDF
+    // joint dynamics maps damping/friction. A "spring" is a compliant
+    // prismatic/revolute joint (collars) with `stiffness` + `damping`; the
+    // helical mesh is cosmetic helper geometry (D7).
+    float stiffness    = 0.0f;   // N·m/rad or N/m (0 = free)
+    float damping      = 0.0f;   // N·m·s/rad or N·s/m
+    float armature     = 0.0f;   // rotor/translating mass added to the joint DOF
+    float frictionloss = 0.0f;   // max friction torque/force at the joint
 };
 
 /// Two joint coordinates coupled as q_b = ratio · q_a (ratio sign carries

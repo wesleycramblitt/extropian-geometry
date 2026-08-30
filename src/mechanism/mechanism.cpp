@@ -20,9 +20,11 @@ math::Quat axis_rotation(const math::Vec3f& axis, float angle)
     return math::Quat::from_axis_angle(axis.normalized(), angle);
 }
 
-/// Joint pose relative to the parent (parent-local): for Fixed a pure anchor
-/// translation; for Revolute/Continuous a rotation about `axis` through
-/// `anchor`; for Prismatic a translation along `axis` by q.
+/// Joint pose relative to the parent, in the MJCF frame convention: the
+/// child's origin IS the joint anchor, so the child pose is
+/// T(anchor) · R(axis, q) (or T(anchor) · S(axis·q)) with NO back-shift.
+/// This keeps internal FK, recipe body-local frames, and the exporters on
+/// one convention: a part's local origin is its joint point.
 math::Mat4 joint_offset(const Joint& j, float q)
 {
     const math::Mat4 T = math::Mat4::trs(j.anchor, math::Quat{1.0f, 0.0f, 0.0f, 0.0f},
@@ -33,21 +35,13 @@ math::Mat4 joint_offset(const Joint& j, float q)
         return T;
     case JointKind::Revolute:
     case JointKind::Continuous:
-    {
-        const math::Mat4 R = math::Mat4::trs(math::Vec3f{0.0f, 0.0f, 0.0f},
-                                             axis_rotation(j.axis, q),
-                                             math::Vec3f{1.0f, 1.0f, 1.0f});
-        const math::Mat4 Tn = math::Mat4::trs(-j.anchor, math::Quat{1.0f, 0.0f, 0.0f, 0.0f},
-                                              math::Vec3f{1.0f, 1.0f, 1.0f});
-        return math::Mat4::mul(T, math::Mat4::mul(R, Tn));
-    }
+        return math::Mat4::mul(T, math::Mat4::trs(math::Vec3f{0.0f, 0.0f, 0.0f},
+                                                  axis_rotation(j.axis, q),
+                                                  math::Vec3f{1.0f, 1.0f, 1.0f}));
     case JointKind::Prismatic:
-    {
-        const math::Mat4 S = math::Mat4::trs(j.axis.normalized() * q,
-                                             math::Quat{1.0f, 0.0f, 0.0f, 0.0f},
-                                             math::Vec3f{1.0f, 1.0f, 1.0f});
-        return math::Mat4::mul(T, S);
-    }
+        return math::Mat4::mul(T, math::Mat4::trs(j.axis.normalized() * q,
+                                                  math::Quat{1.0f, 0.0f, 0.0f, 0.0f},
+                                                  math::Vec3f{1.0f, 1.0f, 1.0f}));
     }
     return math::Mat4::identity();
 }

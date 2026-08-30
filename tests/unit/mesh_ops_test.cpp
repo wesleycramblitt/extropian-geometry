@@ -923,6 +923,24 @@ TEST_CASE("mass_properties: offset box centroid + parallel axis") {
     CHECK(mp.inertia.m[8] == doctest::Approx(450.0f).epsilon(1e-2f));
 }
 
+TEST_CASE("mass_properties: cylinder exact (cap-winding regression)") {
+    // the primitive cylinder's cap fans used to be winding-misoriented
+    // against the side wall, cutting signed volume to 1/3 — this pins the fix
+    CylinderGeometry cyl;
+    cyl.radius = 0.05f;
+    cyl.height = 0.1f;
+    const MassProperties mp = mesh_properties(generate_cylinder_mesh(cyl), 1000.0f);
+    const float r = 0.05f, h = 0.1f;
+    CHECK(mp.volume == doctest::Approx(3.14159265f * r * r * h).epsilon(1e-4f));   // πr²h
+    CHECK(mp.centroid.x == doctest::Approx(0.0f).epsilon(1e-5f));
+    CHECK(mp.centroid.y == doctest::Approx(0.0f).epsilon(1e-5f));
+    CHECK(mp.centroid.z == doctest::Approx(0.0f).epsilon(1e-5f));
+    const float m = mp.mass;
+    CHECK(mp.inertia.m[0] == doctest::Approx(m / 12.0f * (3.0f * r * r + h * h)).epsilon(2e-3f));
+    CHECK(mp.inertia.m[4] == doctest::Approx(m * r * r / 2.0f).epsilon(2e-3f));
+    CHECK(mp.inertia.m[8] == doctest::Approx(m / 12.0f * (3.0f * r * r + h * h)).epsilon(2e-3f));
+}
+
 TEST_CASE("mass_properties: sphere sanity + determinism") {
     SphereGeometry sphere;
     sphere.radius = 0.5f;

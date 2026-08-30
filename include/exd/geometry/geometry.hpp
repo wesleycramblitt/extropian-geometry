@@ -40,6 +40,9 @@
 // ── Motion graph (connectivity core) ──
 #include <exd/geometry/mechanism.hpp>
 
+// ── Constraint export (MJCF / URDF) ──
+#include <exd/geometry/export.hpp>
+
 // ── Noise / procedural terrain ──
 #include <exd/geometry/noise.hpp>
 #include <exd/geometry/terrain.hpp>

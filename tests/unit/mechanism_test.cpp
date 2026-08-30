@@ -103,7 +103,7 @@ TEST_CASE("mechanism: prismatic slider moves along the axis with limits") {
     CHECK(clamped.at("slider").m[12] == doctest::Approx(2.0f).epsilon(1e-5f));
 }
 
-TEST_CASE("mechanism: revolute about an anchor rotates in place") {
+TEST_CASE("mechanism: revolute with child origin at the anchor") {
     Part base = make_shaft("base");
     Part arm = as_part("arm", generate_box_mesh(BoxGeometry{{0.5f, 0.05f, 0.05f}}));
     Mechanism m;
@@ -112,12 +112,11 @@ TEST_CASE("mechanism: revolute about an anchor rotates in place") {
     const auto p = evaluate_poses(m, 1.5708f);
     REQUIRE(p.count("arm") == 1);
     CHECK(pose_angle_z(p.at("arm")) == doctest::Approx(1.5708f).epsilon(1e-4f));
-    // anchor stays fixed: world position of the anchor point = anchor
-    // (rotation about anchor): position of local (1,0,0) ≈ (1,0,0)
-    // via m*(1,0,0): x = m.m[0]*1 + m.m[12]
-    const float x = p.at("arm").m[0] * 1.0f + p.at("arm").m[12];
-    const float y = p.at("arm").m[1] * 1.0f + p.at("arm").m[13];
-    CHECK(std::sqrt((x - 1.0f) * (x - 1.0f) + y * y) == doctest::Approx(0.0f).epsilon(1e-4f));
+    // MJCF convention: the child's origin IS the anchor; with the arm's
+    // origin placed at the hinge the joint point stays fixed at (1,0,0):
+    // world position of local (0,0,0) = translation column
+    CHECK(p.at("arm").m[12] == doctest::Approx(1.0f).epsilon(1e-5f));
+    CHECK(p.at("arm").m[13] == doctest::Approx(0.0f).epsilon(1e-5f));
 }
 
 TEST_CASE("mechanism: validation catches graph errors") {
