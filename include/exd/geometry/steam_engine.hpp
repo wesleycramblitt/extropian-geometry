@@ -2,6 +2,7 @@
 
 #include <exd/geometry/types.hpp>
 #include <exd/geometry/part.hpp>
+#include <exd/geometry/mechanism.hpp>
 
 #include <cstdint>
 
@@ -33,6 +34,17 @@ namespace exd::geometry
 //    • The flywheel (with a V-groove pulley rim — the mechanical power
 //      takeoff) and the crankshaft sit at the crank centre; the pin emerges
 //      from the flywheel's +z face and carries the conrod big end.
+//
+//  Mechanism (joints, parent → child, parent-frame anchor/axis):
+//    shaft      Continuous  world → crankshaft    anchor (crank_x,0,0), +Z
+//    fly_fix    Fixed       crankshaft → flywheel anchor (0,0,0)
+//    pin_fix    Fixed       flywheel → crank_pin  anchor (rc, 0, 0.06)
+//    conrod_pin Revolute    crank_pin → conrod    anchor (0,0,0), +Z
+//    piston_sl  Prismatic   cylinder → piston     anchor (x_c(0),0,rod_plane_z), +X
+//    cross_fix  Fixed       piston → crosshead    anchor (0,0,0)
+//    conrod_cs  Revolute    crosshead → conrod    anchor (0,0,0), +Z (LOOP:
+//                second incoming joint on conrod — exported as a connect)
+//  Driver: `shaft` (a motor on the crank for simulation sweeps).
 //
 //  Parts produced by generate_steam_engine_assembly (V1 contract):
 //    cylinder    — blind bore with a recessed chamber: outer wall, solid
@@ -136,6 +148,25 @@ struct SteamEngineDefinition
     uint32_t revolve_segments = 64;     // lathe subdivision count (clamped to >= 3)
 };
 
+/// The recipe contract (roadmap §3): one descriptor yields the rendered
+/// Assembly, the body-local parts, AND the Mechanism — constraints travel
+/// with the geometry. `mechanism` declares the joints/couplings for
+/// to_mjcf()/to_urdf(); `body` are the parts in their local frames (origin =
+/// joint anchor, exactly what the exporters and evaluate_poses() expect);
+/// `assembly` is the world-posed render (the recipe solves the slider-crank
+/// loop analytically; the exported mechanism carries the same loop as
+/// constraints for the simulator).
+struct SteamEngineResult
+{
+    Assembly assembly;
+    Mechanism mechanism;
+    std::vector<Part> body;
+};
+
+SteamEngineResult generate_steam_engine(const SteamEngineDefinition& engine);
+
+/// The world-posed assembly (renderable); equals generate_steam_engine(...).
+///assembly.
 Assembly generate_steam_engine_assembly(const SteamEngineDefinition& engine);
 
 /// Convenience: flatten(generate_steam_engine_assembly(...)).mesh

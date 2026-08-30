@@ -210,6 +210,14 @@ void accumulate_bounds(Assembly& a)
 /// Tri count per 1-segment lathe piece (2 * SEG).
 uint32_t side_faces(uint32_t seg) { return 2u * seg; }
 
+/// Translate a piece into its part's body-local frame (origin = joint anchor).
+MeshData bake_local(MeshData mesh, const math::Vec3f& t)
+{
+    const math::Mat4 T = math::Mat4::trs(-t, math::Quat{1.0f, 0.0f, 0.0f, 0.0f},
+                                        math::Vec3f{1.0f, 1.0f, 1.0f});
+    return transform_mesh(mesh, T);
+}
+
 /// Weld a set of pieces into one part (ordinal-preserving, patch-safe).
 Part weld_part(std::string name, const std::vector<MeshData>& pieces)
 {
@@ -218,9 +226,9 @@ Part weld_part(std::string name, const std::vector<MeshData>& pieces)
 
 } // namespace
 
-Assembly generate_steam_engine_assembly(const SteamEngineDefinition& def)
+SteamEngineResult generate_steam_engine(const SteamEngineDefinition& def)
 {
-    Assembly a;
+    SteamEngineResult result;
 
     // ── Validation (empty result on impossible geometry, repo convention) ──
     const float rc = def.crank_radius;
@@ -228,50 +236,44 @@ Assembly generate_steam_engine_assembly(const SteamEngineDefinition& def)
                              std::isfinite(def.crank_radius) &&
                              std::isfinite(def.conrod_length) &&
                              std::isfinite(def.piston_rod_length);
-    if (!finiteState) return a;
-    if (!(rc > 0.0f)) return a;
-    if (!(def.conrod_length > rc)) return a;
-    if (!(def.cylinder_outer_radius > 0.0f)) return a;
+    if (!finiteState) return result;
+    if (!(rc > 0.0f)) return result;
+    if (!(def.conrod_length > rc)) return result;
+    if (!(def.cylinder_outer_radius > 0.0f)) return result;
     if (!(def.cylinder_bore_radius > 0.0f &&
-          def.cylinder_bore_radius < def.cylinder_outer_radius)) return a;
-    if (!(def.piston_radius > 0.0f && def.piston_radius < def.cylinder_bore_radius)) return a;
-    if (!(def.piston_rod_length > def.piston_length)) return a;
+          def.cylinder_bore_radius < def.cylinder_outer_radius)) return result;
+    if (!(def.piston_radius > 0.0f && def.piston_radius < def.cylinder_bore_radius)) return result;
+    if (!(def.piston_rod_length > def.piston_length)) return result;
     if (!(def.flywheel_rim_radius > 0.0f &&
           def.flywheel_groove_radius > 0.0f &&
-          def.flywheel_groove_radius < def.flywheel_rim_radius)) return a;
-    if (!(def.rod_plane_z > def.pin_z_start + def.pin_length)) return a;   // pin never pierces the rod
+          def.flywheel_groove_radius < def.flywheel_rim_radius)) return result;
+    if (!(def.rod_plane_z > def.pin_z_start + def.pin_length)) return result;
 
     const uint32_t SEG = std::max(3u, def.revolve_segments);
     const float    theta = def.crank_angle_deg * kDeg2Rad;
     const float    ct    = std::cos(theta);
     const float    st    = std::sin(theta);
 
-    // ── Mechanism (inline crank-slider, zero offset, evaluated here) ──
+    // ── mechanism constants (rest pose = crank angle 0) ──
     const float x_cc = def.crank_center_x;
-    const float x_c  = x_cc + rc * ct + std::sqrt(def.conrod_length * def.conrod_length
-                                                  - rc * rc * st * st);
-    const float x_pk = x_c - def.piston_rod_length;
-    const float x_ce = def.cylinder_crank_end_x;
-    const float x_h  = x_ce - def.cylinder_length;
+    const float L    = def.conrod_length;
+    const float x_c0 = x_cc + L + rc;              // crosshead at θ = 0
     const float z_rod = def.rod_plane_z;
-    const float pin_x = x_cc + rc * ct;
-    const float pin_y = rc * st;
-    const float chamber_bottom = x_h + 0.02f;   // blind bore recess depth
+    const float z_pin = def.pin_z_start + 0.5f * def.pin_length;   // pin centre
+    const float pin_skew_dz = z_rod - z_pin;       // conrod z-rise (spatial link)
+    const float link_len = std::sqrt(L * L + pin_skew_dz * pin_skew_dz);
+    // crank-slider loop closure at the requested state
+    const float x_c   = x_cc + rc * ct + std::sqrt(L * L - rc * rc * st * st);
+    const float psi   = -std::asin(rc * st / L);   // conrod world angle
+    const float q_slide = x_c - x_c0;              // piston prismatic state
+    const float q_conrod = psi - theta;            // conrod in the pin frame
 
-    // ── cylinder ──────────────────────────────────────────────────────────
-    // Closed manifold with a blind bore chamber; the chamber mouth (r < bore
-    // at the crank end) is an EXTERIOR region (torus-hole style), so the
-    // surface has no boundary loops. The piston rod exits through the mouth
-    // as a separate, interpenetrating part — assembly placement, not CSG.
+    // ── cylinder (static: body frame == world) ────────────────────────────
     {
-        // Winding bookkeeping (validated empirically — every join below
-        // passes the 1:1 opposing-edge check, see tests):
-        //   outer wall:  [(outer,x_ce)→(outer,x_h)]  reversed profile order
-        //   head disc:   fan winding +1, normal −x          (closes outer wall @ x_h)
-        //   crank ann.:  [(bore,x_ce)→(outer,x_ce)] normal +x (closes outer wall @ x_ce
-        //                on its outer ring; the bore wall is flipped to oppose it)
-        //   bore wall:   [(bore,x_ce)→(bore,bottom)] flipped → −r normals (chamber wall)
-        //   chamber bot: fan winding −1, normal +x          (closes bore wall @ bottom)
+        const float x_ce = def.cylinder_crank_end_x;
+        const float x_h  = x_ce - def.cylinder_length;
+        const float chamber_bottom = x_h + 0.02f;
+        const float aperture = def.rod_radius + 0.012f;
         std::vector<MeshData> pieces;
         pieces.push_back(lathe_x_open({{def.cylinder_outer_radius, x_ce},
                                        {def.cylinder_outer_radius, x_h}}, SEG));
@@ -285,16 +287,24 @@ Assembly generate_steam_engine_assembly(const SteamEngineDefinition& def)
         pieces.push_back(axis_fan(LatheAxis::X, chamber_bottom, def.cylinder_bore_radius,
                                   +1.0f, -1.0f, SEG));
         Part p = weld_part("cylinder", pieces);
-        // layout: wall n, head fan SEG, crank ann n, bore wall n, chamber fan SEG
         const uint32_t n = side_faces(SEG);
         p.patches.push_back(patch_range("wall",      0u,               n));
         p.patches.push_back(patch_range("cap_head",  n,                uint32_t(SEG)));
         p.patches.push_back(patch_range("cap_crank", n + SEG,          n));
         p.patches.push_back(patch_ranges("bore", {{2 * n + SEG, n}, {3 * n + SEG, uint32_t(SEG)}}));
-        a.parts.push_back(transform_part(p, translate_only({0.0f, 0.0f, z_rod})));
+        // body-local: static → the cylinder's frame IS the world frame, so
+        // the z_rod offset is baked into the mesh
+        p.mesh = bake_local(p.mesh, {0.0f, 0.0f, -z_rod});
+        p.meta.motion = PartMotion::Stationary;
+        result.body.push_back(std::move(p));
     }
 
-    // ── steam chest (box on the cylinder top) ─────────────────────────────
+    // ── steam chest + ports (static, same bake) ────────────────────────────
+    auto bake_static = [&](Part p, const math::Vec3f& worldPos) {
+        p.mesh = bake_local(p.mesh, worldPos);
+        p.meta.motion = PartMotion::Stationary;
+        return p;
+    };
     {
         BoxGeometry chest;
         chest.size = {def.chest_width, def.chest_height, def.chest_depth};
@@ -302,10 +312,8 @@ Assembly generate_steam_engine_assembly(const SteamEngineDefinition& def)
         p.mesh = weld_vertices(p.mesh, 1e-4f);
         p.name = "steam_chest";
         const float chest_y = def.cylinder_outer_radius + 0.5f * def.chest_height;
-        a.parts.push_back(transform_part(p, translate_only({def.chest_x_center, chest_y, z_rod})));
+        result.body.push_back(bake_static(std::move(p), {def.chest_x_center, chest_y, z_rod}));
     }
-
-    // ── steam inlet / exhaust stubs (closed; no lathe caps) ────────────────
     {
         const float y0 = def.cylinder_outer_radius + def.chest_height;
         const float y1 = y0 + def.port_height;
@@ -323,12 +331,13 @@ Assembly generate_steam_engine_assembly(const SteamEngineDefinition& def)
             p.patches.push_back(patch_range("surface", 0, n));
             p.patches.push_back(patch_range("cap_start", n, uint32_t(SEG)));
             p.patches.push_back(patch_range("cap_end", n + SEG, uint32_t(SEG)));
-            a.parts.push_back(transform_part(p, translate_only({xs[i], 0.0f, z_rod})));
+            result.body.push_back(bake_static(std::move(p), {xs[i], 0.0f, z_rod}));
         }
     }
 
-    // ── piston (crown + body + step ring + rod to the crosshead) ───────────
+    // ── piston + rod (local origin = rod end at rest → the crosshead point)
     {
+        const float x_pk = x_c0 - def.piston_rod_length;
         const float x_step = x_pk + def.piston_length;
         std::vector<MeshData> pieces;
         pieces.push_back(axis_fan(LatheAxis::X, x_pk, def.piston_radius, -1.0f, -1.0f, SEG));
@@ -337,36 +346,40 @@ Assembly generate_steam_engine_assembly(const SteamEngineDefinition& def)
         pieces.push_back(negate_normals(lathe_x_open({{def.piston_radius, x_step},
                                                       {def.rod_radius, x_step}}, SEG)));
         pieces.push_back(lathe_x_open({{def.rod_radius, x_step},
-                                       {def.rod_radius, x_c}}, SEG));
-        pieces.push_back(axis_fan(LatheAxis::X, x_c, def.rod_radius, +1.0f, +1.0f, SEG));
+                                       {def.rod_radius, x_c0}}, SEG));
+        pieces.push_back(axis_fan(LatheAxis::X, x_c0, def.rod_radius, +1.0f, +1.0f, SEG));
         Part p = weld_part("piston", pieces);
         const uint32_t n = side_faces(SEG);
         p.patches.push_back(patch_range("crown", 0u, uint32_t(SEG)));
         p.patches.push_back(patch_range("wall",  uint32_t(SEG), 3u * n + uint32_t(SEG)));
-        a.parts.push_back(transform_part(p, translate_only({0.0f, 0.0f, z_rod})));
+        // local origin = rod end: the mesh is raised to the rod plane and
+        // the anchor is (x_c0, 0, z_rod) — the z_rod shifts cancel, so the
+        // bake is the x-shift only; the pose adds the slide state
+        p.mesh = bake_local(p.mesh, {x_c0, 0.0f, 0.0f});
+        p.meta.motion = PartMotion::Reciprocating;
+        result.body.push_back(std::move(p));
     }
 
-    // ── crosshead (sliding block at x_c) ─────────────────────────────────
+    // ── crosshead (local origin = the conrod small end / rod end) ──────────
     {
         BoxGeometry cross;
         cross.size = {def.crosshead_size, def.crosshead_size, def.crosshead_thickness};
         Part p = generate_box_part(cross);
         p.mesh = weld_vertices(p.mesh, 1e-4f);
         p.name = "crosshead";
-        a.parts.push_back(transform_part(p, translate_only({x_c, 0.0f, z_rod})));
+        p.meta.motion = PartMotion::Reciprocating;
+        result.body.push_back(std::move(p));
     }
 
-    // ── conrod (crosshead → crank pin, posed by an orientation quaternion) ──
+    // ── conrod (local origin = big end at the pin; skew baked into the mesh)
     {
         ExtrusionGeometry rod;
         rod.profile = circle_outline(def.conrod_radius, 24);
-        rod.depth   = def.conrod_length;
+        rod.depth   = link_len;
         rod.capped  = false;
         std::vector<MeshData> rodPieces;
         rodPieces.push_back(generate_extrusion_mesh(rod));
-        // extrusion wall rings sit at ±depth/2 and traverse −θ (front, z<0)
-        // and +θ (back, z>0) — the OPPOSITE of the lathe convention, so the
-        // closures must oppose those directions
+        // extrusion wall rings at ±depth/2 traverse −θ/+θ → closures oppose
         rodPieces.push_back(axis_fan(LatheAxis::Z, -0.5f * rod.depth, def.conrod_radius,
                                      -1.0f, +1.0f, 24));
         rodPieces.push_back(axis_fan(LatheAxis::Z, +0.5f * rod.depth, def.conrod_radius,
@@ -375,30 +388,23 @@ Assembly generate_steam_engine_assembly(const SteamEngineDefinition& def)
         p.patches.push_back(patch_range("wall",      0u,           2u * 24u));
         p.patches.push_back(patch_range("cap_start", 2u * 24u,     24u));
         p.patches.push_back(patch_range("cap_end",   3u * 24u,     24u));
-
-        const float pin_z = def.pin_z_start + 0.5f * def.pin_length;
-        const float dx = pin_x - x_c;
-        const float dy = pin_y;
-        const float dz = pin_z - z_rod;     // rod plane lifted clear of the pin
-        const float len = std::sqrt(dx * dx + dy * dy + dz * dz);
-        if (len > 1e-9f)
-        {
-            // Rotate local +Z onto d̂ = (dx,dy,dz)/len: axis = ẑ×d̂, angle =
-            // acos(d̂·ẑ) — valid for the skewed (out-of-plane) conrod.
-            const float nx = -dy / len;
-            const float ny =  dx / len;
-            const float ang = std::acos(dz / len);
-            const math::Quat q = math::Quat::from_axis_angle({nx, ny, 0.0f}, ang);
-            // The extrusion spans local z ∈ [−L/2, +L/2]; translate so the
-            // small end lands exactly at the crosshead and the big end at
-            // the pin: T = crosshead + ½·(pin − crosshead).
-            a.parts.push_back(transform_part(p, math::Mat4::trs(
-                {x_c + 0.5f * dx, 0.5f * dy, z_rod + 0.5f * dz}, q,
-                math::Vec3f{1.0f, 1.0f, 1.0f})));
-        }
+        // bake: centre at origin, then rotate +Z onto the skew axis
+        //   (L, 0, Δz)/|d|: R_y(γ) with (sinγ, cosγ) = (L/|d|, Δz/|d|)
+        // The extrusion centre must map onto the link MIDPOINT
+        // (L/2, 0, Δz/2) so the origin end lands exactly on the pin.
+        const float gy = std::atan2(L, pin_skew_dz);
+        const math::Mat4 bake = math::Mat4::mul(
+            math::Mat4::trs(math::Vec3f{0.5f * L, 0.0f, 0.5f * pin_skew_dz},
+                            math::Quat{1.0f, 0.0f, 0.0f, 0.0f}, math::Vec3f{1.0f, 1.0f, 1.0f}),
+            math::Mat4::trs(math::Vec3f{0.0f, 0.0f, 0.0f},
+                            math::Quat::from_axis_angle({0.0f, 1.0f, 0.0f}, gy),
+                            math::Vec3f{1.0f, 1.0f, 1.0f}));
+        p.mesh = transform_mesh(p.mesh, bake);
+        p.meta.motion = PartMotion::Oscillating;
+        result.body.push_back(std::move(p));
     }
 
-    // ── flywheel (V-groove pulley disc at the crank centre, the power takeoff)
+    // ── flywheel (local origin = crank centre) ─────────────────────────────
     {
         const float t = 0.5f * def.flywheel_thickness;
         const float g = def.flywheel_groove_half_width;
@@ -415,26 +421,29 @@ Assembly generate_steam_engine_assembly(const SteamEngineDefinition& def)
         p.patches.push_back(patch_range("rim",        0u,                 4u * n));
         p.patches.push_back(patch_range("face_start", 4u * n,              uint32_t(SEG)));
         p.patches.push_back(patch_range("face_end",   4u * n + SEG,        uint32_t(SEG)));
-        a.parts.push_back(transform_part(p, translate_only({x_cc, 0.0f, 0.0f})));
+        p.mesh = bake_local(p.mesh, {x_cc, 0.0f, 0.0f});
+        p.meta.motion = PartMotion::Rotating;
+        p.meta.contact = true;      // V-groove power takeoff
+        result.body.push_back(std::move(p));
     }
 
-    // ── crank pin (orbits in the rod plane, pierces the flywheel face) ────
+    // ── crank pin (local origin = pin centre in the flywheel frame) ────────
     {
+        const float ph = 0.5f * def.pin_length;
         std::vector<MeshData> pieces;
-        pieces.push_back(lathe_z_open({{def.pin_radius, def.pin_z_start},
-                                       {def.pin_radius, def.pin_z_start + def.pin_length}}, SEG));
-        pieces.push_back(axis_fan(LatheAxis::Z, def.pin_z_start, def.pin_radius, -1.0f, -1.0f, SEG));
-        pieces.push_back(axis_fan(LatheAxis::Z, def.pin_z_start + def.pin_length,
-                                  def.pin_radius, +1.0f, +1.0f, SEG));
+        pieces.push_back(lathe_z_open({{def.pin_radius, -ph}, {def.pin_radius, ph}}, SEG));
+        pieces.push_back(axis_fan(LatheAxis::Z, -ph, def.pin_radius, -1.0f, -1.0f, SEG));
+        pieces.push_back(axis_fan(LatheAxis::Z,  ph, def.pin_radius, +1.0f, +1.0f, SEG));
         Part p = weld_part("crank_pin", pieces);
         const uint32_t n = side_faces(SEG);
         p.patches.push_back(patch_range("surface", 0, n));
         p.patches.push_back(patch_range("cap_start", n, uint32_t(SEG)));
         p.patches.push_back(patch_range("cap_end", n + SEG, uint32_t(SEG)));
-        a.parts.push_back(transform_part(p, translate_only({pin_x, pin_y, 0.0f})));
+        p.meta.motion = PartMotion::Rotating;
+        result.body.push_back(std::move(p));
     }
 
-    // ── crankshaft (capped journal through the flywheel hub) ──────────────
+    // ── crankshaft (local origin = crank centre) ───────────────────────────
     {
         std::vector<MeshData> pieces;
         pieces.push_back(lathe_z_open({{def.shaft_radius, -def.shaft_half_length},
@@ -448,26 +457,68 @@ Assembly generate_steam_engine_assembly(const SteamEngineDefinition& def)
         p.patches.push_back(patch_range("journal", 0, n));
         p.patches.push_back(patch_range("cap_start", n, uint32_t(SEG)));
         p.patches.push_back(patch_range("cap_end", n + SEG, uint32_t(SEG)));
-        a.parts.push_back(transform_part(p, translate_only({x_cc, 0.0f, 0.0f})));
+        p.mesh = bake_local(p.mesh, {x_cc, 0.0f, 0.0f});
+        p.meta.motion = PartMotion::Rotating;
+        p.meta.contact = true;      // the drive takeoff
+        result.body.push_back(std::move(p));
     }
 
-    // ── Orientation canonicalization ──
-    // The lathe's winding chirality is profile-order dependent, so parts built
-    // with different profile orders can come out globally inside-out while
-    // still passing the directed-edge gate (the boolean gate silently
-    // normalizes). Downstream consumers (mass properties, backface culling,
-    // outward-patch semantics) need outward winding: flip any part whose
-    // signed volume is negative and resmooth normals from the winding.
-    for (Part& part : a.parts)
+
+    // ── mechanism declaration (see header for the joint table) ─────────────
+    {
+        auto& m = result.mechanism;
+        Joint shaft{"shaft", JointKind::Continuous, "", "crankshaft",
+                    {x_cc, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, -1e30f, 1e30f, 50.0f, 20.0f};
+        m.joints.push_back(shaft);
+        m.joints.push_back({"fly_fix", JointKind::Fixed, "crankshaft", "flywheel",
+                            {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, 0.0f, 0.0f, 0.0f, 0.0f});
+        m.joints.push_back({"pin_fix", JointKind::Fixed, "flywheel", "crank_pin",
+                            {rc, 0.0f, z_pin}, {0.0f, 0.0f, 1.0f}, 0.0f, 0.0f, 0.0f, 0.0f});
+        m.joints.push_back({"conrod_pin", JointKind::Revolute, "crank_pin", "conrod",
+                            {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, -1.7f, 1.7f, 100.0f, 20.0f});
+        m.joints.push_back({"piston_sl", JointKind::Prismatic, "cylinder", "piston",
+                            {x_c0, 0.0f, z_rod}, {1.0f, 0.0f, 0.0f},
+                            -2.0f * rc, 0.0f, 2e4f, 2.0f});
+        m.joints.push_back({"cross_fix", JointKind::Fixed, "piston", "crosshead",
+                            {0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, 0.0f, 0.0f, 0.0f, 0.0f});
+        m.joints.push_back({"conrod_cs", JointKind::Revolute, "crosshead", "conrod",
+                            {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, -1.7f, 1.7f, 100.0f, 20.0f});
+        m.driver_joint = "shaft";
+    }
+
+    // ── world poses: analytic slider-crank loop closure (D2: the recipe
+    //    carries the mechanism math; the loop is exported as constraints) ──
+    std::map<std::string, math::Mat4> poses;
+    poses["crankshaft"] = math::Mat4::mul(math::Mat4::trs({x_cc, 0.0f, 0.0f},
+        math::Quat{1.0f, 0.0f, 0.0f, 0.0f}, math::Vec3f{1.0f, 1.0f, 1.0f}),
+        math::Mat4::trs(math::Vec3f{0.0f, 0.0f, 0.0f},
+            math::Quat::from_axis_angle({0.0f, 0.0f, 1.0f}, theta),
+            math::Vec3f{1.0f, 1.0f, 1.0f}));
+    poses["flywheel"]  = poses["crankshaft"];
+    poses["crank_pin"] = math::Mat4::mul(poses["crankshaft"],
+        math::Mat4::trs({rc, 0.0f, z_pin}, math::Quat{1.0f, 0.0f, 0.0f, 0.0f},
+                        math::Vec3f{1.0f, 1.0f, 1.0f}));
+    poses["piston"]    = math::Mat4::trs({x_c, 0.0f, z_rod},
+        math::Quat{1.0f, 0.0f, 0.0f, 0.0f}, math::Vec3f{1.0f, 1.0f, 1.0f});
+    poses["crosshead"] = poses["piston"];
+    poses["conrod"]    = math::Mat4::mul(poses["crank_pin"],
+        math::Mat4::trs(math::Vec3f{0.0f, 0.0f, 0.0f},
+            math::Quat::from_axis_angle({0.0f, 0.0f, 1.0f}, q_conrod),
+            math::Vec3f{1.0f, 1.0f, 1.0f}));
+
+    result.assembly = apply_poses(result.mechanism, result.body, poses);
+
+    // ── orientation canonicalization (negative signed volume → flip) ──
+    for (Part& part : result.assembly.parts)
     {
         if (part.mesh.vertices.empty()) continue;
         double volume = 0.0;
-        const auto& m = part.mesh;
-        for (std::size_t i = 0; i + 2 < m.indices.size(); i += 3)
+        const auto& mm = part.mesh;
+        for (std::size_t i = 0; i + 2 < mm.indices.size(); i += 3)
         {
-            const auto& p0 = m.vertices[m.indices[i + 0]].position;
-            const auto& p1 = m.vertices[m.indices[i + 1]].position;
-            const auto& p2 = m.vertices[m.indices[i + 2]].position;
+            const auto& p0 = mm.vertices[mm.indices[i + 0]].position;
+            const auto& p1 = mm.vertices[mm.indices[i + 1]].position;
+            const auto& p2 = mm.vertices[mm.indices[i + 2]].position;
             volume += static_cast<double>(p0.x) * (static_cast<double>(p1.y) * p2.z -
                                                    static_cast<double>(p1.z) * p2.y) +
                       static_cast<double>(p0.y) * (static_cast<double>(p1.z) * p2.x -
@@ -479,15 +530,37 @@ Assembly generate_steam_engine_assembly(const SteamEngineDefinition& def)
             part.mesh = flip_and_resmooth(part.mesh);
     }
 
-    accumulate_bounds(a);
-    return a;
+    // bounds union
+    result.assembly.bounds = {};
+    bool have = false;
+    for (const Part& part : result.assembly.parts)
+    {
+        if (part.mesh.vertices.empty()) continue;
+        const Bounds b = compute_bounds(part.mesh.vertices);
+        if (!have) { result.assembly.bounds = b; have = true; }
+        else
+        {
+            result.assembly.bounds.min.x = std::min(result.assembly.bounds.min.x, b.min.x);
+            result.assembly.bounds.min.y = std::min(result.assembly.bounds.min.y, b.min.y);
+            result.assembly.bounds.min.z = std::min(result.assembly.bounds.min.z, b.min.z);
+            result.assembly.bounds.max.x = std::max(result.assembly.bounds.max.x, b.max.x);
+            result.assembly.bounds.max.y = std::max(result.assembly.bounds.max.y, b.max.y);
+            result.assembly.bounds.max.z = std::max(result.assembly.bounds.max.z, b.max.z);
+        }
+    }
+    return result;
+}
+
+Assembly generate_steam_engine_assembly(const SteamEngineDefinition& engine)
+{
+    return generate_steam_engine(engine).assembly;
 }
 
 MeshData generate_steam_engine_mesh(const SteamEngineDefinition& engine)
 {
-    const Assembly a = generate_steam_engine_assembly(engine);
-    if (a.parts.empty()) return {};
-    return flatten(a).mesh;
+    const SteamEngineResult r = generate_steam_engine(engine);
+    if (r.assembly.parts.empty()) return {};
+    return flatten(r.assembly).mesh;
 }
 
 } // namespace exd::geometry

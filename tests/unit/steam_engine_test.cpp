@@ -232,8 +232,8 @@ TEST_CASE("steam engine: conrod reaches crosshead and pin") {
         const Part& crosshead = a.parts[5];
         const Part& pin     = a.parts[8];
 
-        // cap_start = small end (local −Z), cap_end = big end (+Z): their
-        // centroids must sit on the crosshead and the pin respectively.
+        // Body-local convention: cap_start = big end at the pin (the local
+        // origin), cap_end = small end at the crosshead (the loop point).
         exd::math::Vec3f startC{0.0f, 0.0f, 0.0f}, endC{0.0f, 0.0f, 0.0f};
         uint32_t sN = 0, eN = 0;
         for (const Patch& patch : conrod.patches)
@@ -257,23 +257,21 @@ TEST_CASE("steam engine: conrod reaches crosshead and pin") {
         const exd::math::Vec3f e = eN ? endC * (1.0f / static_cast<float>(eN)) : exd::math::Vec3f{};
 
         const Bounds ch = compute_bounds(crosshead.mesh.vertices);
-        const Bounds pi = compute_bounds(pin.mesh.vertices);
         const float t = theta * kPi / 180.0f;
         const float px = d.crank_center_x + d.crank_radius * std::cos(t);
         const float py = d.crank_radius * std::sin(t);
         const float pz = d.pin_z_start + 0.5f * d.pin_length;
-        const float pinErr = std::sqrt((e.x - px) * (e.x - px) + (e.y - py) * (e.y - py) +
-                                       (e.z - pz) * (e.z - pz));
         CAPTURE(theta);
-        // small end within the crosshead block
-        CHECK(s.x >= ch.min.x - 0.01f);
-        CHECK(s.x <= ch.max.x + 0.01f);
-        CHECK(s.z >= ch.min.z - 0.01f);
-        CHECK(s.z <= ch.max.z + 0.01f);
-        // big end on the pin centerline: the conrod is conrod_length while
-        // |pin − crosshead| varies ≈ ±0.2% over the stroke, and the fan
-        // centroid averages the ring — 5 mm absolute covers both
+        // big end on the pin centerline (5 mm covers the ½·|d| − L residual
+        // and the fan-centroid averaging)
+        const float pinErr = std::sqrt((s.x - px) * (s.x - px) + (s.y - py) * (s.y - py) +
+                                       (s.z - pz) * (s.z - pz));
         CHECK(pinErr < 0.005f);
+        // small end within the crosshead block
+        CHECK(e.x >= ch.min.x - 0.01f);
+        CHECK(e.x <= ch.max.x + 0.01f);
+        CHECK(e.z >= ch.min.z - 0.01f);
+        CHECK(e.z <= ch.max.z + 0.01f);
     }
 }
 
@@ -388,4 +386,103 @@ TEST_CASE("steam engine: bounds sane and cover the mechanism") {
     CHECK(std::isfinite(b.max.y));
     CHECK(std::isfinite(b.min.z));
     CHECK(std::isfinite(b.max.z));
+}
+
+// ── Mechanism contract (Phase D migration) ──
+
+TEST_CASE("steam engine: mechanism validates and matches the joint table") {
+    const SteamEngineResult r = generate_steam_engine(default_engine());
+    std::vector<std::string> errors;
+    REQUIRE(validate_mechanism(r.mechanism, errors));
+
+    REQUIRE(r.mechanism.joints.size() == 7);
+    CHECK(r.mechanism.joints[0].name == "shaft");
+    CHECK(r.mechanism.joints[0].kind == JointKind::Continuous);
+    CHECK(r.mechanism.joints[0].child == "crankshaft");
+    CHECK(r.mechanism.driver_joint == "shaft");
+
+    // the conrod carries both ends: two incoming joints → the loop edge
+    uint32_t conrodIncoming = 0;
+    for (const Joint& j : r.mechanism.joints)
+        if (j.child == "conrod") conrodIncoming++;
+    CHECK(conrodIncoming == 2);   // conrod_pin (tree) + conrod_cs (loop)
+}
+
+TEST_CASE("steam engine: FK rest pose equals the recipe's θ=0 pose") {
+    SteamEngineDefinition d = default_engine();
+    d.crank_angle_deg = 0.0f;
+    const SteamEngineResult r = generate_steam_engine(d);
+    const std::map<std::string, exd::math::Mat4> rest = evaluate_poses(r.mechanism, 0.0f);
+
+    // recipe world pose of each non-static part (translation column)
+    std::map<std::string, exd::math::Vec3f> recipeTrans;
+    for (const Part& p : r.assembly.parts)
+        recipeTrans[p.name] = {0.0f, 0.0f, 0.0f};   // placeholder: derive below
+
+    // The recipe pose map is not stored, so compare against the EXECUTED
+    // assembly: each part's bounds-centre must coincide with the FK pose's
+    // translation of the part's local origin. The local origin is inside the
+    // mesh; use the assembly part's bounds centre minus the mesh's local
+    // bounds centre (both at the same world pose).
+    for (const Part& placed : r.assembly.parts)
+    {
+        const auto it = rest.find(placed.name);
+        if (it == rest.end()) continue;   // statics resolve to identity
+        // local bounds centre
+        const Part* local = nullptr;
+        for (const Part& b : r.body)
+            if (b.name == placed.name) { local = &b; break; }
+        REQUIRE(local != nullptr);
+        const Bounds lo = compute_bounds(local->mesh.vertices);
+        const exd::math::Vec3f loC{(lo.min.x + lo.max.x) / 2.0f, (lo.min.y + lo.max.y) / 2.0f,
+                              (lo.min.z + lo.max.z) / 2.0f};
+        const Bounds wo = compute_bounds(placed.mesh.vertices);
+        const exd::math::Vec3f woC{(wo.min.x + wo.max.x) / 2.0f, (wo.min.y + wo.max.y) / 2.0f,
+                              (wo.min.z + wo.max.z) / 2.0f};
+        // world centre ≈ restPose · local centre (translation part only when
+        // the rest pose is pure translation — true at θ=0 for this machine?
+        // crankshaft/flywheel/pin rotate about z: their centres are ON the
+        // rotation axis (x_cc, 0, z_c)… except the pin (centre offset rc):
+        // at θ=0 the rotation angle is 0, so restPose·loC == loC + t.
+        const exd::math::Vec3f t{it->second.m[12], it->second.m[13], it->second.m[14]};
+        CAPTURE(placed.name);
+        CHECK(woC.x == doctest::Approx(loC.x + t.x).epsilon(2e-3f));
+        CHECK(woC.y == doctest::Approx(loC.y + t.y).epsilon(2e-3f));
+        CHECK(woC.z == doctest::Approx(loC.z + t.z).epsilon(2e-3f));
+    }
+}
+
+TEST_CASE("steam engine: mjcf export carries joints, motor, and the loop") {
+    const SteamEngineResult r = generate_steam_engine(default_engine());
+    const ExportBundle b = to_mjcf(r.mechanism, r.body);
+    const std::string& x = b.xml;
+
+    // static base: cylinder/chest/ports under worldbody; kin parts as bodies
+    CHECK(x.find("<body name=\"cylinder\" pos=\"0 0 0\">") != std::string::npos);
+    // the driver: motor on the shaft
+    CHECK(x.find("<motor joint=\"shaft\" ctrlrange=\"-50 50\"/>") != std::string::npos);
+    // crank world-anchored continuous hinge
+    CHECK(x.find("<joint name=\"shaft\" type=\"hinge\"") != std::string::npos);
+    CHECK(x.find("<body name=\"crankshaft\" pos=\"0.45 0 0\">") != std::string::npos);
+    // prismatic piston with limits, at the rest crosshead anchor
+    CHECK(x.find("<joint name=\"piston_sl\" type=\"slide\"") != std::string::npos);
+    CHECK(x.find("<body name=\"piston\" pos=\"1 0 0.105\">") != std::string::npos);
+    // the slider-crank loop: conrod's second incoming joint → connect weld
+    CHECK(x.find("<connect body1=\"crosshead\" body2=\"conrod\" anchor=\"1 0 0.105\"/>") != std::string::npos);
+    // contact parts only: flywheel + crankshaft carry collision groups
+    CHECK(x.find("mesh=\"flywheel\" group=\"1\" contype=\"1\" conaffinity=\"1\"") != std::string::npos);
+    CHECK(x.find("mesh=\"piston\" group=\"1\" contype=") == std::string::npos);
+    // inertials present, mesh bundle complete
+    CHECK(x.find("<inertial pos=") != std::string::npos);
+    REQUIRE(b.meshes.count("flywheel") == 1);
+    CHECK(b.meshes.at("flywheel").find("v ") != std::string::npos);
+}
+
+TEST_CASE("steam engine: export deterministic") {
+    const SteamEngineDefinition d = default_engine();
+    const auto r1 = generate_steam_engine(d);
+    const auto r2 = generate_steam_engine(d);
+    CHECK(to_mjcf(r1.mechanism, r1.body).xml == to_mjcf(r2.mechanism, r2.body).xml);
+    CHECK(to_urdf(r1.mechanism, r1.body).xml == to_urdf(r2.mechanism, r2.body).xml);
+    CHECK(r1.body.size() == r2.body.size());
 }

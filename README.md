@@ -13,7 +13,8 @@ shaping additionally uses FreeType + HarfBuzz.
 - **Mesh ops** — merge, transform, bounds; incremental `MeshBuilder`.
 - **Parts & patches** — `Part`/`Patch`/`Assembly` with labelled face sets for boundary conditions; native patches on cylinder/cone/box/extrusion/lathe; turbine assemblies with per-row patched parts.
 - **Loft / processing** — loft/skin between sections, polygon triangulation (concave + holes), vertex welding, normal recomputation.
-- **Machines** — compressor recipe: staged axial machine as a patched Assembly (casing, spinner, rotor/stator rows with boundary patches).
+- **Machines** — compressor recipe: staged axial machine as a patched Assembly (casing, spinner, rotor/stator rows with boundary patches); single-cylinder **steam engine recipe**: state-parametric crank-slider assembly (cylinder with blind-bore chamber, steam chest + ports, piston, crosshead, conrod, flywheel with V-groove pulley takeoff, crank pin, crankshaft) returned as {Assembly, Mechanism} for any crank angle.
+- **Connectivity & sim export** — motion graph: fixed/revolute/continuous/prismatic joints with limits + compliance, gear/belt/rack couplings, tree FK and validation; mass/inertia properties (`mesh_properties`); **MJCF** (primary: equality joints for gears/welds, actuation, deformables) and **URDF** (mimic gears) exporters — constraints travel with the geometry for MuJoCo/Drake/Gazebo/PyBullet-class consumers.
 - **Booleans** — exact CSG union/subtract/intersect on closed meshes (watertight-gated; coplanar overlap is a documented V1 limitation).
 - **Path / blend / SDF** — path following, signed-distance-field blending,
   marching cubes, extrusion, heightmaps, deformation.

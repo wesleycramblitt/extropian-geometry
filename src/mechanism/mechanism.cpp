@@ -172,9 +172,11 @@ std::map<std::string, math::Mat4> evaluate_poses(const Mechanism& mech, float st
 
     std::unordered_map<std::string, math::Mat4> world;
     std::vector<const Joint*> work;
-    size_t had = 0;
+    // Seeds: joints whose parent is the world OR a static part (a part with
+    // no incoming joint resolves at identity). Without the second condition,
+    // chains rooted at static bodies (cylinder → piston) never resolve.
     for (const Joint& j : mech.joints)
-        if (is_world(j.parent))
+        if (is_world(j.parent) || !parentJointOfPart.count(j.parent))
             work.push_back(&j);
     // worklist: unresolved entries requeue until their parent resolves;
     // bounded to avoid infinite loops on cyclic declarations.
@@ -185,17 +187,27 @@ std::map<std::string, math::Mat4> evaluate_poses(const Mechanism& mech, float st
         const Joint* j = work[i];
         if (world.count(j->child))
             continue;
+        // only the part's designated FK joint (first incoming, declaration
+        // order) resolves it; loop-carrier joints never do — otherwise the
+        // worklist race would let a fast loop edge claim the child first
+        if (parentJointOfPart[j->child] != j->name)
+            continue;
         math::Mat4 parentWorld = math::Mat4::identity();
         if (!is_world(j->parent))
         {
-            const auto it = world.find(j->parent);
-            if (it == world.end())
+            const bool parentIsStatic = !parentJointOfPart.count(j->parent);
+            if (!parentIsStatic)
             {
-                if (++requeues > maxPasses) continue;
-                work.push_back(j);
-                continue;
+                const auto it = world.find(j->parent);
+                if (it == world.end())
+                {
+                    if (++requeues > maxPasses) continue;
+                    work.push_back(j);
+                    continue;
+                }
+                parentWorld = it->second;
             }
-            parentWorld = it->second;
+            // static parent (no incoming joint) stays at identity
         }
         world[j->child] = math::Mat4::mul(parentWorld, joint_offset(*j, q[j->name]));
         for (const Joint& kid : mech.joints)

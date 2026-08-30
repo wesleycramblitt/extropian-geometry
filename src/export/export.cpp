@@ -172,13 +172,24 @@ ExportBundle to_mjcf(const Mechanism& mech, std::span<const Part> parts,
     // couplings (gears/belts/rack) + kinematic-loop point welds → one equality block
     if (!mech.couplings.empty() || !loopJoints.empty())
     {
+        // MJCF connect anchors are GLOBAL: transform each loop joint's
+        // parent-frame anchor by the parent's REST pose (state 0)
+        const auto rest = evaluate_poses(mech, 0.0f);
+        auto world_anchor = [&](const Joint& j) {
+            const auto it = rest.find(j.parent);
+            if (it == rest.end()) return j.anchor;   // static/unknown parent
+            const math::Mat4& m = it->second;
+            return math::Vec3f{m.m[0] * j.anchor.x + m.m[4] * j.anchor.y + m.m[8] * j.anchor.z + m.m[12],
+                               m.m[1] * j.anchor.x + m.m[5] * j.anchor.y + m.m[9] * j.anchor.z + m.m[13],
+                               m.m[2] * j.anchor.x + m.m[6] * j.anchor.y + m.m[10] * j.anchor.z + m.m[14]};
+        };
         os << "  <equality>\n";
         for (const Coupling& c : mech.couplings)
             os << "    <joint joint1=\"" << c.joint_a << "\" joint2=\"" << c.joint_b
                << "\" polycoef=\"0 " << fmt(-c.ratio) << " 1\"/>\n";
         for (const Joint* j : loopJoints)
             os << "    <connect body1=\"" << j->parent << "\" body2=\"" << j->child
-               << "\" anchor=\"" << fmt_v(j->anchor) << "\"/>\n";
+               << "\" anchor=\"" << fmt_v(world_anchor(*j)) << "\"/>\n";
         os << "  </equality>\n";
     }
 
