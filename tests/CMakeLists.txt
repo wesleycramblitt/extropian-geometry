@@ -9,6 +9,7 @@ add_executable(test_advanced        unit/advanced_test.cpp)
 add_executable(test_parts           unit/part_test.cpp)
 add_executable(test_loft           unit/loft_test.cpp)
 add_executable(test_compressor     unit/compressor_test.cpp)
+add_executable(test_steam_engine    unit/steam_engine_test.cpp)
 add_executable(test_gizmos          unit/gizmo_test.cpp)
 
 set(TEST_TARGETS
@@ -22,6 +23,7 @@ set(TEST_TARGETS
     test_parts
     test_loft
     test_compressor
+    test_steam_engine
     test_gizmos
 )
 

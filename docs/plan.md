@@ -182,6 +182,7 @@ interaction workflows (boundary-condition unit = face set = "patch"):
 | Lathe (part) | `LatheGeometry` | `generate_lathe_part()` |
 | Turbine (assembly) | `TurbineDefinition` | `generate_turbine_assembly()` |
 | Compressor | `CompressorDefinition` | `generate_compressor_assembly()` |
+| Steam engine | `SteamEngineDefinition` | `generate_steam_engine_assembly()` |
 
 **Planned additions (3D):**
 

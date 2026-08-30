@@ -35,6 +35,7 @@
 
 // ── Machines ──
 #include <exd/geometry/compressor.hpp>
+#include <exd/geometry/steam_engine.hpp>
 
 // ── Advanced generators ──
 #include <exd/geometry/extrusion.hpp>

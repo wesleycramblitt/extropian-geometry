@@ -13,7 +13,7 @@ shaping additionally uses FreeType + HarfBuzz.
 - **Mesh ops** — merge, transform, bounds; incremental `MeshBuilder`.
 - **Parts & patches** — `Part`/`Patch`/`Assembly` with labelled face sets for boundary conditions; native patches on cylinder/cone/box/extrusion/lathe; turbine assemblies with per-row patched parts.
 - **Loft / processing** — loft/skin between sections, polygon triangulation (concave + holes), vertex welding, normal recomputation.
-- **Machines** — compressor recipe: staged axial machine as a patched Assembly (casing, spinner, rotor/stator rows with boundary patches).
+- **Machines** — compressor recipe: staged axial machine as a patched Assembly (casing, spinner, rotor/stator rows with boundary patches); single-cylinder steam engine recipe: state-parametric crank-slider assembly (cylinder with blind-bore chamber, steam chest + ports, piston, crosshead, conrod, flywheel with V-groove pulley takeoff, crank pin, crankshaft), evaluated at any crank angle.
 - **Booleans** — exact CSG union/subtract/intersect on closed meshes (watertight-gated; coplanar overlap is a documented V1 limitation).
 - **Path / blend / SDF** — path following, signed-distance-field blending,
   marching cubes, extrusion, heightmaps, deformation.
