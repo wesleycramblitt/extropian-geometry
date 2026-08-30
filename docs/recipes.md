@@ -1,6 +1,6 @@
 # Domain Recipe Roadmap
 
-> **Status: planning.** Companion to `plan.md` (the kernel roadmap). Recipes are
+> **Status: planning.** Companion to `plan.md` (the kernel roadmap) and `mechanisms.md` (the connectivity/sim-export design record). Recipes are
 > domain-semantic generators built **on** kernel operators; this document plans
 > *what to build and in what order* — `plan.md` plans the operators themselves.
 > A recipe is cheap once its operators exist; the ordering below sequences
@@ -66,10 +66,10 @@ gizmo layer, the patch layer, and downstream solvers all see the same model.
 | Shelling (hollow solids) | 📋 plan | water jackets, manifolds, skin-and-rib parts |
 | Fillets / chamfers (mesh-level) | 📋 plan | powertrain-class quality (cranks, rods, housings) |
 | Involute profile generator (2D) | 📋 plan | spur/helical gears, gear pumps, toothed pulleys |
-| Mass properties (V, A, centroid, inertia) | 📋 plan (bool volume exists privately) | every solid recipe; simulator inputs |
-| Part metadata (motion / material / density / contact) | 📋 plan | every machine recipe; sim export |
-| Motion graph (joints, couplings, limits, tree FK) | 📋 plan (Phase 0b) | every connected machine recipe |
-| MJCF / URDF constraint export | 📋 plan (Phase 0b) | simulator consumers of every machine recipe |
+| Mass properties (V, A, centroid, inertia) | ✅ shipped as `mesh_properties()` (Mirtich, double accumulation; analytic tests) | every solid recipe; simulator inputs |
+| Part metadata (`PartMeta`: motion / material / density / contact) | ✅ shipped | every machine recipe; sim export |
+| Motion graph (joints, couplings, limits, tree FK) | ✅ shipped (Phase 0b; see [mechanisms.md](mechanisms.md)) | every connected machine recipe |
+| MJCF / URDF constraint export | ✅ shipped (Phase 0b; gated MuJoCo round-trip test) | simulator consumers of every machine recipe |
 | Assembly instancing (place parts × N) | 📋 plan (transform_part + merge_parts exist) | every machine recipe |
 | Kinematics pose helpers (crank-slider, 4-bar, rack-pinion) | ✅ crank-slider in steam engine (recipe-local, per D2); general helpers 📋 plan | engines, suspensions, landing gear |
 | Parametric surfaces / NURBS-lite | 🔭 long | quality fuselage/wing skins (v2) |
@@ -144,7 +144,7 @@ Yagi (tube) 1, dipole 1, helical 1, phased-array tile (structured repeat) 3.
 
 | Machine | Composed components | State params | Phase | Size |
 |---|---|---|---|---|
-| Steam engine (single-cyl) | ✅ v1 geometry (2026-08); migrating to the mechanism contract (0b): body-local parts + joints (continuous shaft, revolute conrod ends, prismatic crosshead) + MJCF/URDF export | crank angle | 5 → 0b | M |
+| Steam engine (single-cyl) | ✅ shipped (2026-08): body-local parts + declared Mechanism (continuous shaft, fixed welds, dual-revolute conrod with the slider-crank loop exported as a connect) + MJCF/URDF export; recipe keeps the analytic loop closure for rendering (D2) | crank angle | 0b | M |
 | Combustion engine (single-cyl air-cooled) | block, head, piston+rings, conrod, crankshaft v1, valves, springs, flywheel | crank angle, valve lift | 5 | L |
 | Electric motor (PM BLDC) | stator stack, windings, rotor core, magnets, shaft, housing, end caps, fan | rotor angle | 5 | M |
 | Gearbox v1 (2-shaft) | spur gears, shafts, housing, bearings | shaft angle | 5 | M |
@@ -202,7 +202,7 @@ Yagi (tube) 1, dipole 1, helical 1, phased-array tile (structured repeat) 3.
 | Phase | Theme | Operator work | Recipes | Milestone / validation |
 |---|---|---|---|---|
 | 0 | Sim core | instancing, mass props, metadata, boolean V2 coplanar, shelling, kinematics | — | boolean V2 suite: block-with-2-bores subtract watertight |
-| 0b | Connectivity & sim export | motion graph (joints/couplings + tree FK + assemble), public mass/inertia props, MJCF + URDF exporters, PartMeta.contact | steam engine migration to mechanism contract | steam engine: one descriptor → rendered assembly + MJCF loads in MuJoCo |
+| 0b | Connectivity & sim export ✅ | motion graph, mass/inertia props, MJCF + URDF exporters, PartMeta.contact, compliance joints + deformable schema (Tier 1/2) | steam engine migrated to the mechanism contract | steam engine: one descriptor → rendered assembly + Mechanism + MJCF (gated MuJoCo load test) + URDF; FK rest == recipe rest, part-for-part |
 | 1 | Lathe & profile family | (none — shipped) | projectile, dish, spring, nozzle, flywheel, pulley, tire, whip/Yagi, helical antenna | projectile assembly: watertight + mass properties |
 | 2 | Gear & lamination family | involute generator | spur gear, helical gear, cam, toothed pulley, lamination stacks | involute profile suite; gear assembly patches |
 | 3 | Sweep & rails family | arbitrary-profile sweep + parallel transport; loft rails | ducts, horn antenna, ports, nacelle, wing v1, fuselage v1, impeller, prop | manifold runner; wing with control-surface split patches |

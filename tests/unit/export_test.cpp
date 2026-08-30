@@ -142,3 +142,68 @@ TEST_CASE("export: deterministic and stable") {
     const ExportBundle u2 = to_urdf(m, parts);
     CHECK(u1.xml == u2.xml);
 }
+
+// ── Gated MuJoCo round-trip (runs only where python3 + mujoco exist) ──
+
+#include <cstdio>
+#include <fstream>
+#include <cstdlib>
+#include <filesystem>
+
+namespace {
+
+bool python_has_mujoco()
+{
+    const int rc = std::system("python3 -c \"import mujoco\" >/dev/null 2>&1");
+    return rc == 0;
+}
+
+} // namespace
+
+TEST_CASE("export: MJCF loads in MuJoCo (gated)") {
+    if (!python_has_mujoco())
+    {
+        MESSAGE("skipped: python3 mujoco module not available");
+        return;
+    }
+    Part a = as_part("gear_a", generate_cylinder_mesh(CylinderGeometry{0.05f, 0.1f}));
+    Part b = as_part("gear_b", generate_cylinder_mesh(CylinderGeometry{0.04f, 0.1f}));
+    Mechanism m;
+    m.joints.push_back({"j_a", JointKind::Continuous, "", "gear_a", {0,0,0}, {0,0,1}, -1e30f, 1e30f, 10.0f, 20.0f});
+    m.joints.push_back({"j_b", JointKind::Continuous, "", "gear_b", {0.2f,0,0}, {0,0,1}, -1e30f, 1e30f, 10.0f, 20.0f});
+    m.couplings.push_back({"g", CouplingKind::Gear, "j_a", "j_b", -2.0f});
+    m.driver_joint = "j_a";
+    const std::vector<Part> parts{a, b};
+
+    // also round-trip the full steam engine when it's cheap
+    const SteamEngineResult se = generate_steam_engine(SteamEngineDefinition{});
+
+    std::filesystem::path dir = std::filesystem::temp_directory_path() / "exd_mjcf_roundtrip";
+    std::filesystem::create_directories(dir);
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+
+    int checked = 0;
+    const auto check_bundle = [&](const char* label, const ExportBundle& bundle) {
+        const auto xmlPath = dir / (std::string(label) + ".xml");
+        std::ofstream xml(xmlPath);
+        xml << bundle.xml;
+        xml.close();
+        for (const auto& [name, obj] : bundle.meshes)
+        {
+            std::ofstream o(dir / (name + ".obj"));
+            o << obj;
+            o.close();
+        }
+        const std::string cmd = "python3 -c \"import mujoco; " 
+            "mj = mujoco.MjModel.from_xml_path('" + xmlPath.string() + "'); "
+            "print('loaded', mj.nbody, 'bodies')\"";
+        const int rc = std::system(cmd.c_str());
+        CAPTURE(label);
+        CHECK(rc == 0);
+        checked++;
+    };
+    check_bundle("gearbox", to_mjcf(m, parts));
+    check_bundle("steam", to_mjcf(se.mechanism, se.body));
+    CHECK(checked == 2);
+}

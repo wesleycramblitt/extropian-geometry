@@ -205,6 +205,9 @@ interaction workflows (boundary-condition unit = face set = "patch"):
 - **Naming.** Patch names are construction-relative (`wall`, `cap_start`,
   `cap_end`, `surface`, `+x`/`-x`/…), never guessed physics; consumers map
   them to solver patch names (inlet/outlet/wall) downstream.
+- **Metadata.** `Part.meta` (`PartMeta`: kind Rigid/Deformable, motion,
+  material, density, `contact` opt-in flag) feeds the gizmo layer, mass
+  properties, and the simulation exporters (see `mechanisms.md`).
 - **Preservation.** `transform_part()` and `deform_mesh()` preserve patch
   ordinals (the index buffer is unchanged); `flatten()` remaps them by
   cumulative triangle offsets and prefixes patch names with the owning part's
@@ -270,6 +273,9 @@ interaction workflows (boundary-condition unit = face set = "patch"):
 | Lathe (part) | `LatheGeometry` | `generate_lathe_part()` |
 | Turbine (assembly) | `TurbineDefinition` | `generate_turbine_assembly()` |
 | Compressor | `CompressorDefinition` | `generate_compressor_assembly()` |
+| Steam engine | `SteamEngineDefinition` | `generate_steam_engine()` → `{Assembly, Mechanism, body}` |
+| Motion graph | `Mechanism` / `Joint` / `Coupling` | `evaluate_poses()` / `apply_poses()` |
+| Constraint export | `ExportOptions` | `to_mjcf()` / `to_urdf()` → `{xml, meshes}` |
 
 **Planned additions (3D):**
 
@@ -338,6 +344,7 @@ All are pure functions — input unchanged, new output returned.
 | Weld | `weld_vertices()` | Distance-threshold |
 | Recompute normals | `recompute_normals()` | Flat / Smooth |
 | Boolean (CSG) | `boolean_mesh()` | Union / Subtract / Intersect |
+| Mass properties | `mesh_properties()` | Volume, area, mass, centroid, inertia (Mirtich) |
 
 **Planned:**
 
@@ -350,7 +357,6 @@ All are pure functions — input unchanged, new output returned.
 | Tangent generation | MEDIUM | Compute tangent + bitangent from UVs for normal mapping |
 | Edge detection | MEDIUM | Identify boundary edges, hard edges (by angle), non-manifold edges |
 | Mesh slice | MEDIUM | Bisect mesh along a plane, produce cross-section outline |
-| Mesh statistics | MEDIUM | Volume, surface area, centroid, moment of inertia |
 | Remesh | LOW | Isotropic or curvature-adaptive retriangulation |
 | Delaunay / Voronoi | LOW | 2D triangulation and Voronoi tessellation of point sets |
 | Mesh repair | LOW | Hole filling, normal flipping, non-manifold cleanup |
@@ -411,7 +417,15 @@ include/exd/geometry/
 ├── heightmap.hpp            # Heightmap → terrain mesh
 ├── loft.hpp                 # Loft / skin between cross-sections
 ├── part.hpp                 # Part/Patch/Assembly modelling layer
-└── geometry.hpp             # Umbrella header (includes all of the above)
+├── mechanism.hpp           # Motion graph: joints/couplings + tree FK (Phase 0b)
+├── export.hpp              # Constraint export: MJCF (primary) + URDF (secondary)
+├── steam_engine.hpp        # Steam engine recipe under the mechanism contract
+└── geometry.hpp            # Umbrella header (includes all of the above)
+
+src/
+├── mechanism/              # motion graph implementation (Phase 0b)
+├── export/                 # MJCF/URDF/OBJ exporters
+├── steam_engine/           # steam engine recipe
 
 src/
 ├── mesh_builder.cpp
