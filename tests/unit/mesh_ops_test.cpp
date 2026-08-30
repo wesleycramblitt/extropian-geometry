@@ -876,3 +876,74 @@ TEST_CASE("boolean: canonicalization accepts un-welded inputs")
     CHECK(r.indices.size() / 3 == a.indices.size() / 3 + bShifted.indices.size() / 3);
     CHECK(r.indices.size() / 3 == 24);
 }
+
+// ── Mass properties ──
+
+TEST_CASE("mass_properties: unit box exact integrals") {
+    BoxGeometry box;
+    box.size = {1.0f, 2.0f, 3.0f};               // a=1, b=2, c=3
+    const MeshData m = generate_box_mesh(box);
+    const MassProperties mp = mesh_properties(m, 1000.0f);
+
+    CHECK(mp.volume == doctest::Approx(6.0f).epsilon(1e-4f));          // a·b·c
+    CHECK(mp.surface_area == doctest::Approx(22.0f).epsilon(1e-3f));   // 2(ab+bc+ca)
+    CHECK(mp.mass == doctest::Approx(6000.0f).epsilon(1e-3f));
+    // centroid at the origin (box is centered)
+    CHECK(mp.centroid.x == doctest::Approx(0.0f).epsilon(1e-5f));
+    CHECK(mp.centroid.y == doctest::Approx(0.0f).epsilon(1e-5f));
+    CHECK(mp.centroid.z == doctest::Approx(0.0f).epsilon(1e-5f));
+    // box inertia about COM: diag(m/12·(b²+c²), m/12·(a²+c²), m/12·(a²+b²))
+    const float m12 = 6000.0f / 12.0f;
+    CHECK(mp.inertia.m[0] == doctest::Approx(m12 * (4.0f + 9.0f)).epsilon(1e-3f));   // Ixx = m/12(b²+c²)= 6000/12·13
+    CHECK(mp.inertia.m[4] == doctest::Approx(m12 * (1.0f + 9.0f)).epsilon(1e-3f));   // Iyy = 6000/12·10
+    CHECK(mp.inertia.m[8] == doctest::Approx(m12 * (1.0f + 4.0f)).epsilon(1e-3f));   // Izz = 6000/12·5
+    // off-diagonals vanish for the centered box
+    CHECK(mp.inertia.m[1] == doctest::Approx(0.0f).epsilon(1e-2f));
+    CHECK(mp.inertia.m[2] == doctest::Approx(0.0f).epsilon(1e-2f));
+    CHECK(mp.inertia.m[5] == doctest::Approx(0.0f).epsilon(1e-2f));
+}
+
+TEST_CASE("mass_properties: offset box centroid + parallel axis") {
+    // translate a unit cube to (1, 2, 3); centroid must follow, inertia about
+    // the COM is unchanged by translation
+    BoxGeometry box;
+    box.size = {1.0f, 1.0f, 1.0f};
+    MeshData m = generate_box_mesh(box);
+    m = transform_mesh(m, exd::math::Mat4::trs({1.0f, 2.0f, 3.0f},
+                                          exd::math::Quat{1.0f, 0.0f, 0.0f, 0.0f},
+                                          exd::math::Vec3f{1.0f, 1.0f, 1.0f}));
+    const MassProperties mp = mesh_properties(m, 2700.0f);   // aluminium
+    CHECK(mp.centroid.x == doctest::Approx(1.0f).epsilon(1e-4f));
+    CHECK(mp.centroid.y == doctest::Approx(2.0f).epsilon(1e-4f));
+    CHECK(mp.centroid.z == doctest::Approx(3.0f).epsilon(1e-4f));
+    CHECK(mp.mass == doctest::Approx(2700.0f).epsilon(1e-3f));
+    // unit cube COM inertia: diag(m/6, m/6, m/6) = 450
+    CHECK(mp.inertia.m[0] == doctest::Approx(450.0f).epsilon(1e-2f));
+    CHECK(mp.inertia.m[4] == doctest::Approx(450.0f).epsilon(1e-2f));
+    CHECK(mp.inertia.m[8] == doctest::Approx(450.0f).epsilon(1e-2f));
+}
+
+TEST_CASE("mass_properties: sphere sanity + determinism") {
+    SphereGeometry sphere;
+    sphere.radius = 0.5f;
+    const MeshData m = generate_sphere_mesh(sphere);
+    const MassProperties a = mesh_properties(m, 1000.0f);
+    const MassProperties b = mesh_properties(m, 1000.0f);
+    // faceted sphere: converges to the analytic values from below
+    CHECK(a.volume == doctest::Approx(4.0f / 3.0f * 3.14159265f * 0.125f).epsilon(0.05f));
+    CHECK(b.volume == a.volume);
+    CHECK(b.mass == a.mass);
+    CHECK(a.centroid.x == doctest::Approx(0.0f).epsilon(1e-4f));
+    CHECK(a.centroid.y == doctest::Approx(0.0f).epsilon(1e-4f));
+    CHECK(a.centroid.z == doctest::Approx(0.0f).epsilon(1e-4f));
+    // hollow vs solid: steam-engine flywheel (solid disc) must be ~solid
+    SteamEngineDefinition d;
+    const Assembly asm_ = generate_steam_engine_assembly(d);
+    for (const Part& part : asm_.parts)
+    {
+        const MassProperties mp = mesh_properties(part.mesh);
+        CHECK(mp.volume > 0.0f);
+        if (part.name == "steam_chest")
+            CHECK(mp.volume == doctest::Approx(0.12f * 0.08f * 0.06f).epsilon(1e-3f));
+    }
+}

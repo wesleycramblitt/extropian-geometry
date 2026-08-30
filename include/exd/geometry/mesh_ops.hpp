@@ -1,6 +1,7 @@
 #pragma once
 
 #include <exd/geometry/types.hpp>
+#include <exd/math/mat3.hpp>
 #include <exd/math/mat4.hpp>
 
 #include <span>
@@ -84,5 +85,26 @@ MeshData boolean_mesh(const MeshData& a, const MeshData& b, BooleanOp op,
 /// normals averaged (angle-weighted by corner angle). Assumes Triangles
 /// topology. Empty input → empty output.
 MeshData recompute_normals(const MeshData& mesh, NormalMode mode = NormalMode::Smooth);
+
+// ── Mass / inertial properties (simulator inputs) ──
+
+/// Inertial properties of a closed solid, computed from the tessellation.
+/// Meaningful for watertight, consistently-oriented meshes (the boolean
+/// closed-manifold gate and the recipes' signed-volume checks qualify them);
+/// the computation itself does not gate and works on any consistent mesh.
+/// All values SI: volume m³, area m², mass kg, centroid m, inertia kg·m².
+struct MassProperties
+{
+    float volume       = 0.0f;   // signed-volume magnitude (m³)
+    float surface_area = 0.0f;   // (m²)
+    float mass         = 0.0f;   // density × volume (kg)
+    math::Vec3f centroid;        // geometric centroid (m; origin for empty)
+    math::Mat3  inertia;         // inertia tensor about the centroid (kg·m²)
+};
+
+/// Compute MassProperties from a closed triangle mesh via Mirtich tetrahedron
+/// decomposition (double accumulation). `density` defaults to water (1000
+/// kg/m³). Empty or degenerate input → zeroed properties (mass = 0.
+MassProperties mesh_properties(const MeshData& mesh, float density = 1000.0f);
 
 } // namespace exd::geometry

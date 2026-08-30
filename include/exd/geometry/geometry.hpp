@@ -37,6 +37,9 @@
 #include <exd/geometry/compressor.hpp>
 #include <exd/geometry/steam_engine.hpp>
 
+// ── Motion graph (connectivity core) ──
+#include <exd/geometry/mechanism.hpp>
+
 // ── Noise / procedural terrain ──
 #include <exd/geometry/noise.hpp>
 #include <exd/geometry/terrain.hpp>

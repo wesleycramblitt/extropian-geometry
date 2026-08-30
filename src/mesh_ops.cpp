@@ -2183,4 +2183,110 @@ MeshData boolean_mesh(const MeshData& a, const MeshData& b, BooleanOp op,
     return result;
 }
 
+// Mass / inertial properties (Mirtich tetrahedron decomposition)
+// ============================================================================
+
+MassProperties mesh_properties(const MeshData& mesh, float density)
+{
+    MassProperties mp;
+    const size_t ni = mesh.indices.size();
+    if (mesh.vertices.empty() || ni == 0 || ni % 3 != 0)
+        return mp;
+
+    // Reference point: first vertex (reduces magnitude of the accumulation).
+    const math::Vec3f o = mesh.vertices[mesh.indices[0]].position;
+
+    double vol = 0.0, cx = 0.0, cy = 0.0, cz = 0.0, area = 0.0;
+    // Inertia about the reference point o (kg·m²-scaled: I = ∫(y²+z²) etc.),
+    // accumulated in density-less form; multiplied by density at the end.
+    double ixx = 0.0, iyy = 0.0, izz = 0.0;
+    double ixy = 0.0, ixz = 0.0, iyz = 0.0;
+
+    for (size_t t = 0; t < ni; t += 3)
+    {
+        const math::Vec3f pa = mesh.vertices[mesh.indices[t + 0]].position - o;
+        const math::Vec3f pb = mesh.vertices[mesh.indices[t + 1]].position - o;
+        const math::Vec3f pc = mesh.vertices[mesh.indices[t + 2]].position - o;
+
+        const double det = static_cast<double>(pa.x) * (static_cast<double>(pb.y) * pc.z -
+                                                        static_cast<double>(pb.z) * pc.y) -
+                           static_cast<double>(pa.y) * (static_cast<double>(pb.x) * pc.z -
+                                                        static_cast<double>(pb.z) * pc.x) +
+                           static_cast<double>(pa.z) * (static_cast<double>(pb.x) * pc.y -
+                                                        static_cast<double>(pb.y) * pc.x);
+        const double v6 = det / 6.0;
+        vol += v6;
+
+        // centroid element (∫x dv = V6/4·(px+qx+rx), cyclic)
+        cx += v6 * (pa.x + pb.x + pc.x) / 4.0;
+        cy += v6 * (pa.y + pb.y + pc.y) / 4.0;
+        cz += v6 * (pa.z + pb.z + pc.z) / 4.0;
+
+        // area element (half the cross-product magnitude)
+        const math::Vec3f e1 = pb - pa, e2 = pc - pa;
+        area += 0.5 * static_cast<double>(e1.cross(e2).length());
+
+        // Mirtich canonical integrals (density-less inertia about the origin o)
+        // ∫x² = V6/10·(px²+qx²+rx²+pxqx+pxrx+qxrx); ∫xy = V6/20·(2pxqx+2pxrx+2qxrx+pyqy+pyry+qyry)
+        const double pxx2 = pa.x * pa.x, qxx2 = pb.x * pb.x, rxx2 = pc.x * pc.x;
+        const double pyy2 = pa.y * pa.y, qyy2 = pb.y * pb.y, ryy2 = pc.y * pc.y;
+        const double pzz2 = pa.z * pa.z, qzz2 = pb.z * pb.z, rzz2 = pc.z * pc.z;
+        const double Ix2 = v6 / 10.0 * (pxx2 + qxx2 + rxx2 + pa.x * pb.x + pa.x * pc.x + pb.x * pc.x);
+        const double Iy2 = v6 / 10.0 * (pyy2 + qyy2 + ryy2 + pa.y * pb.y + pa.y * pc.y + pb.y * pc.y);
+        const double Iz2 = v6 / 10.0 * (pzz2 + qzz2 + rzz2 + pa.z * pb.z + pa.z * pc.z + pb.z * pc.z);
+        // ∫xy = V6/20·(2·Σ p_i q_i + Σ over pairs of (p_i q_j + q_i p_j)) — the
+        // mixed products run over x/y (or x/z, y/z) coordinate pairs, NOT
+        // x/x + y/y terms (derived via the affine map from the unit simplex).
+        const double Ixy = v6 / 20.0 *
+            (2.0 * (pa.x * pa.y + pb.x * pb.y + pc.x * pc.y) +
+             pa.x * pb.y + pa.y * pb.x + pa.x * pc.y + pa.y * pc.x +
+             pb.x * pc.y + pb.y * pc.x);
+        const double Ixz = v6 / 20.0 *
+            (2.0 * (pa.x * pa.z + pb.x * pb.z + pc.x * pc.z) +
+             pa.x * pb.z + pa.z * pb.x + pa.x * pc.z + pa.z * pc.x +
+             pb.x * pc.z + pb.z * pc.x);
+        const double Iyz = v6 / 20.0 *
+            (2.0 * (pa.y * pa.z + pb.y * pb.z + pc.y * pc.z) +
+             pa.y * pb.z + pa.z * pb.y + pa.y * pc.z + pa.z * pc.y +
+             pb.y * pc.z + pb.z * pc.y);
+        ixx += Iy2 + Iz2;
+        iyy += Ix2 + Iz2;
+        izz += Ix2 + Iy2;
+        ixy -= Ixy;
+        ixz -= Ixz;
+        iyz -= Iyz;
+    }
+
+    const double volMag = std::abs(vol);
+    if (volMag < 1e-9)
+        return mp;   // degenerate shell → zeroed properties
+
+    mp.volume       = static_cast<float>(volMag);
+    mp.surface_area = static_cast<float>(area);
+    mp.mass         = static_cast<float>(density * volMag);
+
+    // centroid is independent of density (defined for uniform density)
+    const math::Vec3f c{static_cast<float>(cx / vol), static_cast<float>(cy / vol),
+                        static_cast<float>(cz / vol)};
+    mp.centroid = c + o;
+
+    // parallel-axis: shift the tensor from o to the centroid (r = c − o)
+    const double rx = cx / vol, ry = cy / vol, rz = cz / vol;
+    const double r2 = rx * rx + ry * ry + rz * rz;
+    const double m  = density * volMag;
+    ixx = density * ixx - m * (ry * ry + rz * rz);
+    iyy = density * iyy - m * (rx * rx + rz * rz);
+    izz = density * izz - m * (rx * rx + ry * ry);
+    ixy = density * ixy + m * rx * ry;
+    ixz = density * ixz + m * rx * rz;
+    iyz = density * iyz + m * ry * rz;
+
+    mp.inertia = math::Mat3{
+        static_cast<float>(ixx), static_cast<float>(ixy), static_cast<float>(ixz),
+        static_cast<float>(ixy), static_cast<float>(iyy), static_cast<float>(iyz),
+        static_cast<float>(ixz), static_cast<float>(iyz), static_cast<float>(izz),
+    };
+    return mp;
+}
+
 } // namespace exd::geometry

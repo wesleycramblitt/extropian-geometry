@@ -22,14 +22,37 @@ struct Patch
     std::vector<uint32_t> faces;
 };
 
-/// A named component: its own local-space mesh, BC patches, and (future)
-/// solver metadata. The unit of separation for simulation (rotor vs. casing)
+/// Coarse motion class for a part (scene layer animation + sim export hints).
+enum class PartMotion
+{
+    Stationary,    // welded to the world / parent (static base)
+    Rotating,      // e.g. shafts, wheels, flywheels
+    Reciprocating, // e.g. pistons, crossheads, sliders
+    Oscillating,   // e.g. conrods at both ends free, rockers
+};
+
+/// Per-part solver/interaction metadata (roadmap §7 "Part metadata").
+/// Deliberately minimal: motion for the scene layer, density for mass
+/// properties, `contact` is the EXPLICIT opt-in flag that marks a part's
+/// patches for export as collision surfaces (simulations only see parts with
+/// contact = true; nothing is assumed).
+struct PartMeta
+{
+    PartMotion  motion   = PartMotion::Stationary;
+    std::string material;                 // empty = default (steel-like)
+    float       density  = 1000.0f;       // kg/m³ (water default; override per material)
+    bool        contact  = false;         // opt-in collision export
+};
+
+/// A named component: its own local-space mesh, BC patches, and solver
+/// metadata. The unit of separation for simulation (rotor vs. casing)
 /// and the unit the gizmo layer picks and transforms.
 struct Part
 {
     std::string name;
     MeshData mesh;
     std::vector<Patch> patches;
+    PartMeta meta;                        // motion/density/contact for solvers
 };
 
 /// A machine: named Parts kept separate (own meshes, own local patch

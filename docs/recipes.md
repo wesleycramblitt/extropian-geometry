@@ -47,6 +47,10 @@ gizmo layer, the patch layer, and downstream solvers all see the same model.
 - `generate_<name>_assembly()` → patched `Assembly` (part/patch names in header)
 - `generate_<name>_mesh()` convenience (flatten) where single-mesh renders occur
 - closed-manifold gate passes for solid parts; mass properties exposed when solid
+- `generate_<name>()` returns `{ Assembly, Mechanism }` (posed assembly for
+  rendering + joint/transmission graph for simulators)
+- `to_mjcf()` / `to_urdf()` export smoke-tested per recipe (well-formed,
+  correct joint frames/ratios/inertials)
 - doctest cases; README bullet; recipes.md row
 
 ## 4. Kernel dependency map
@@ -63,7 +67,9 @@ gizmo layer, the patch layer, and downstream solvers all see the same model.
 | Fillets / chamfers (mesh-level) | 📋 plan | powertrain-class quality (cranks, rods, housings) |
 | Involute profile generator (2D) | 📋 plan | spur/helical gears, gear pumps, toothed pulleys |
 | Mass properties (V, A, centroid, inertia) | 📋 plan (bool volume exists privately) | every solid recipe; simulator inputs |
-| Part metadata (motion / material) | 📋 plan | every machine recipe |
+| Part metadata (motion / material / density / contact) | 📋 plan | every machine recipe; sim export |
+| Motion graph (joints, couplings, limits, tree FK) | 📋 plan (Phase 0b) | every connected machine recipe |
+| MJCF / URDF constraint export | 📋 plan (Phase 0b) | simulator consumers of every machine recipe |
 | Assembly instancing (place parts × N) | 📋 plan (transform_part + merge_parts exist) | every machine recipe |
 | Kinematics pose helpers (crank-slider, 4-bar, rack-pinion) | ✅ crank-slider in steam engine (recipe-local, per D2); general helpers 📋 plan | engines, suspensions, landing gear |
 | Parametric surfaces / NURBS-lite | 🔭 long | quality fuselage/wing skins (v2) |
@@ -138,7 +144,7 @@ Yagi (tube) 1, dipole 1, helical 1, phased-array tile (structured repeat) 3.
 
 | Machine | Composed components | State params | Phase | Size |
 |---|---|---|---|---|
-| Steam engine (single-cyl) | ✅ v1 (2026-08): cylinder+steam chest+ports, piston+rod, crosshead, conrod, flywheel (V-groove takeoff), crank pin, crankshaft | crank angle | 5 | M |
+| Steam engine (single-cyl) | ✅ v1 geometry (2026-08); migrating to the mechanism contract (0b): body-local parts + joints (continuous shaft, revolute conrod ends, prismatic crosshead) + MJCF/URDF export | crank angle | 5 → 0b | M |
 | Combustion engine (single-cyl air-cooled) | block, head, piston+rings, conrod, crankshaft v1, valves, springs, flywheel | crank angle, valve lift | 5 | L |
 | Electric motor (PM BLDC) | stator stack, windings, rotor core, magnets, shaft, housing, end caps, fan | rotor angle | 5 | M |
 | Gearbox v1 (2-shaft) | spur gears, shafts, housing, bearings | shaft angle | 5 | M |
@@ -168,12 +174,27 @@ Yagi (tube) 1, dipole 1, helical 1, phased-array tile (structured repeat) 3.
   approximate — offset surfaces are research-grade, documented).
 - **Kinematics pose helpers** — crank-slider, 4-bar, rack-pinion (2D pose math;
   lives in recipes).
+- **Motion graph (connectivity core)** — `Mechanism { joints, couplings,
+  driver }`: fixed/revolute/continuous/prismatic joints with limits +
+  gear/belt/rack transmissions coupling joint coordinates (ratio + sense);
+  tree forward kinematics `evaluate_poses(mechanism, state)` → per-part
+  world poses; `assemble(mechanism, parts)` via ordinal-preserving
+  `transform_part` (patches survive). Closed loops (slider-cranks, gear
+  trains) are carried by exported constraints, not resolved by in-library FK.
+- **Simulation export** — `to_mjcf()` (primary: gears via `equality polycoef`,
+  belts via `tendon divisor`, auto-frame parent-local joints, actuation +
+  limits) and `to_urdf()` (secondary: widest importer coverage; gears as
+  `<mimic>`, no loops). Recipes return `{ Assembly, Mechanism }` so constraints
+  travel with the geometry; glTF stays geometry-only for renderers.
+- **Contact labeling** — `PartMeta.contact` (explicit opt-in flag): only
+  parts marked `contact = true` export their patches as collision surfaces.
 
 ## 8. Roadmap phases
 
 | Phase | Theme | Operator work | Recipes | Milestone / validation |
 |---|---|---|---|---|
 | 0 | Sim core | instancing, mass props, metadata, boolean V2 coplanar, shelling, kinematics | — | boolean V2 suite: block-with-2-bores subtract watertight |
+| 0b | Connectivity & sim export | motion graph (joints/couplings + tree FK + assemble), public mass/inertia props, MJCF + URDF exporters, PartMeta.contact | steam engine migration to mechanism contract | steam engine: one descriptor → rendered assembly + MJCF loads in MuJoCo |
 | 1 | Lathe & profile family | (none — shipped) | projectile, dish, spring, nozzle, flywheel, pulley, tire, whip/Yagi, helical antenna | projectile assembly: watertight + mass properties |
 | 2 | Gear & lamination family | involute generator | spur gear, helical gear, cam, toothed pulley, lamination stacks | involute profile suite; gear assembly patches |
 | 3 | Sweep & rails family | arbitrary-profile sweep + parallel transport; loft rails | ducts, horn antenna, ports, nacelle, wing v1, fuselage v1, impeller, prop | manifold runner; wing with control-surface split patches |
@@ -182,7 +203,7 @@ Yagi (tube) 1, dipole 1, helical 1, phased-array tile (structured repeat) 3.
 | 6 | Machines II / vehicles | (compose) | rolling chassis, glider, rotor/prop, turbocharger, centrifugal pump, radiator | chassis steering sweep (state-parametric) |
 | 7 | Organic & quality | loft rails quality, parametric surfaces, SDF heart | fuselage v2, heart v1, fairings | heart assembly (v1 approximation) |
 
-Rough sizing: 0 M · 1 M · 2 L · 3 L · 4 XL · 5 L · 6 L · 7 ongoing.
+Rough sizing: 0 M · 0b M · 1 M · 2 L · 3 L · 4 XL · 5 L · 6 L · 7 ongoing.
 
 ## 9. Documented decisions & tradeoffs
 
@@ -190,7 +211,10 @@ Rough sizing: 0 M · 1 M · 2 L · 3 L · 4 XL · 5 L · 6 L · 7 ongoing.
   (`cyl_0`) so `flatten()` prefixing stays valid. Hierarchy = future.
 - **D2 — kinematics in recipes.** State-param math (crank-slider…) lives in
   recipes, not the kernel. Kernel stays shape, recipes carry mechanism.
-- **D3 — minimal metadata.** `PartMeta{motion, material}` — deliberately not a
+- **D3 — minimal metadata.** `PartMeta{PartMotion motion; std::string material;
+  float density; bool contact}` — motion for the scene layer, density for
+  mass-property computation, `contact` as the explicit opt-in flag that
+  exports a part's patches as collision surfaces. Deliberately not a
   heavyweight schema; extend per domain later.
 - **D4 — boolean V2 is the engine-class gate.** Nothing engine/housing-like
   before coplanar booleans; V1 returns `{}` on coplanar contact by design.
@@ -202,6 +226,18 @@ Rough sizing: 0 M · 1 M · 2 L · 3 L · 4 XL · 5 L · 6 L · 7 ongoing.
   the arbitrary-profile sweep operator.
 - **D8 — shells are approximate** (offset + subtract); exact offset surfaces are
   out of scope and documented as such.
+- **D9 — MJCF is the primary constraint export; URDF the secondary.** Gears
+  (`equality joint polycoef`), belts/rack (`tendon divisor`), and weld-loops
+  survive the MJCF round trip; it auto-inherits inertials, ships official
+  WASM/JS bindings (same artifact feeds the WebGL path), and is the converter
+  hub (SDF/USD/Newton). URDF offers the widest importer coverage but no
+  transmissions (position-level `<mimic>` only) and no kinematic loops. No
+  custom JSON canonical serialization; no UsdPhysics/glTF-physics exports
+  (unratified draft, no gears). glTF stays geometry-only for renderers.
+- **D10 — inertials are computed, not placeholder.** `mesh_properties(mesh,
+  density) → {volume, mass, centroid, inertia about COM}` from watertight
+  solids (the boolean gate qualifies parts); both exporters emit these values
+  (URDF requires them; MJCF takes ours rather than compiler inference).
 
 ## 10. Non-goals (for now)
 
