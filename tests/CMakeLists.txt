@@ -11,7 +11,6 @@ add_executable(test_gizmos          unit/gizmo_test.cpp)
 add_executable(test_loft            unit/loft_test.cpp)
 add_executable(test_compressor      unit/compressor_test.cpp)
 add_executable(test_steam_engine    unit/steam_engine_test.cpp)
-add_executable(test_gizmos          unit/gizmo_test.cpp)
 
 set(TEST_TARGETS
     test_2d_primitives
