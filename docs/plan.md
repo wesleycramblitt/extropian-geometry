@@ -13,6 +13,9 @@
 
 ## 1. Purpose
 
+> **Recipes:** [docs/recipes.md](recipes.md) is the domain-recipe roadmap built on this kernel
+>
+
 Geometry is a **pure computational library**. It generates `exd::geometry::MeshData` from structured descriptors. It has no GPU dependency, no ECS dependency, and no renderer dependency.
 
 Geometry answers:
@@ -89,6 +92,91 @@ parallel API surface, works identically everywhere.
 
 ## 4. Primitive Types
 
+### 4a. General 3D shape strategy
+
+The current implementation is best understood as a **procedural mesh
+generator library**, rather than a complete CAD or general-purpose solid
+modeling kernel. Its common API is:
+
+```text
+descriptor → generate_*_mesh() → MeshData
+```
+
+This is deliberately simple, deterministic, renderer-independent, and easy to
+use from C++ or WASM. It is already effective for fixed primitives, 2D paths,
+extrusions, lathes, circular tubes, helical forms, terrain, SDF combinations,
+deformations, and domain-specific machines such as turbines.
+
+It does not yet provide a universal representation for arbitrary 3D surfaces.
+The long-term architecture should therefore be layered:
+
+1. **Mathematical geometry:** `ParametricCurve`, `ParametricSurface`,
+   `ScalarField`, `VectorField`, `Profile2D`, `Path3D`, and stable frame fields.
+2. **Construction operators:** robust extrusion, revolve, arbitrary-profile
+   sweep, loft/skin, patch tessellation, implicit-field extraction, and
+   composable deformation.
+3. **Mesh processing:** validation, normal generation, welding, repair,
+   booleans, subdivision, decimation, UVs, tangents, slicing, and statistics.
+4. **Domain recipes:** turbine, heart, wing, tree, shell, gear, and other
+   models expressed using the shared layers.
+
+This means a new shape should normally be a recipe over reusable operators,
+not a new meshing algorithm. A specialized model remains appropriate when its
+parameters carry domain meaning. The turbine is an example: blade rows, span,
+stagger, sweep, lean, flow paths, and tip clearance are more useful than a
+generic list of vertex controls.
+
+#### Example: heart geometry
+
+A stylized heart can be approximated today with SDF spheres, cones/capsules,
+smooth subtraction, and deformation. That route is suitable for icons and
+organic blobs, but the public SDF API currently supports only built-in
+primitives and marching-cubes extraction is resolution-limited.
+
+An anatomically plausible external heart would be better represented by a
+domain-specific `HeartGeometry` descriptor implemented using generic
+infrastructure: multiple asymmetric cross-sections, loft/skin, controlled
+deformation, grooves, and possibly a custom implicit field. A realistic heart
+does therefore justify a domain recipe, but should not require duplicating the
+underlying sweep, tessellation, boolean, or mesh-repair code.
+
+#### Current limitations to keep explicit
+
+- `ExtrusionGeometry` uses a simple cap fan and is not a general concave or
+  holed-polygon triangulator.
+- `TubeGeometry` sweeps a circular section only; its frame handling needs a
+  robust parallel-transport implementation for difficult 3D paths.
+- `deform_mesh()` does not recompute normals, and its deformation domains and
+  operator ordering are currently implicit.
+- `transform_mesh()` needs inverse-transpose normal handling for non-uniform
+  scale and normal renormalization.
+- SDF blends are approximate, fixed-resolution, limited to built-in fields, and
+  can return an empty mesh when the requested grid exceeds safety limits.
+- Mesh merging concatenates geometry; it does not weld or boolean-combine
+  surfaces.
+- Invalid input generally produces an empty `MeshData` without a diagnostic,
+  making authoring and debugging harder.
+
+These are capability and reliability gaps, not reasons to abandon the current
+descriptor/generator API. They identify the reusable infrastructure that should
+precede additional complex domain models.
+
+#### Recommended implementation order
+
+1. **Foundation:** robust polygon triangulation, parameter validation,
+   structured diagnostics, mesh validation, normal recomputation, correct
+   inverse-transpose normal transforms, and reliable sweep frames.
+2. **General construction:** arbitrary-profile sweep, loft/skin, parametric
+   surface tessellation, and a public custom scalar-field interface.
+3. **Mesh processing:** vertex welding, slicing, mesh statistics, subdivision,
+   decimation, UV/tangent generation, repair, and finally mesh booleans.
+4. **Domain recipes:** add complex models such as hearts, wings, trees, and
+   anatomical or mechanical parts by composing the capabilities above.
+
+This order improves many future models at once. Adding more one-off generators
+before the first two stages would increase feature count without solving the
+underlying generality problem.
+
 ## 4b. Parts, patches & assemblies
 
 The modeling layer wraps `MeshData` in labelled components for simulation and
@@ -108,7 +196,7 @@ interaction workflows (boundary-condition unit = face set = "patch"):
   | Box | `+x`, `-x`, `+y`, `-y`, `+z`, `-z` |
   | Extrusion | `wall`, `cap_start` (-Z), `cap_end` (+Z) |
   | Lathe | `surface`, `cap_start`/`cap_end` (profile ends) |
-  | Loft | `wall`, `cap_start`, `cap_end` |
+  | Loft | wall, cap_start, cap_end |
 
 - **Contract.** Engineering generators (multi-region machines, e.g. turbine)
   MUST expose a `generate_*_assembly()` returning named `Part`s with boundary
@@ -182,7 +270,6 @@ interaction workflows (boundary-condition unit = face set = "patch"):
 | Lathe (part) | `LatheGeometry` | `generate_lathe_part()` |
 | Turbine (assembly) | `TurbineDefinition` | `generate_turbine_assembly()` |
 | Compressor | `CompressorDefinition` | `generate_compressor_assembly()` |
-| Steam engine | `SteamEngineDefinition` | `generate_steam_engine_assembly()` |
 
 **Planned additions (3D):**
 
@@ -229,8 +316,10 @@ procedural layouts, and scientific rendering.
 | Type | Description |
 |---|---|
 | Loft / Skin | Interpolate mesh surface between multiple profile cross-sections |
+| Procedural noise heightmap | `Noise2D` (value/Perlin/Voronoi + fBm/ridged/warped) and `TerrainConfig` presets (Plains, Hills, Mountains, Dunes, Canyon, Volcanic, Islands, Terraced) → `generate_terrain_heightmap()` / `generate_terrain_mesh()` |
 | Sweep along arbitrary path | Generalized Tube — sweep any profile along any 3D curve |
 | Multi-LOD terrain | Quadtree-chunked heightmap with variable resolution |
+| Procedural noise heightmap | Generate heightmap data from noise functions (Perlin, simplex, Worley) |
 
 ## 5. Mesh Operations
 
@@ -245,9 +334,9 @@ All are pure functions — input unchanged, new output returned.
 | Transform | `transform_mesh()` | Apply 4x4 matrix to positions and normals |
 | Bounds | `compute_bounds()` | Compute AABB from vertex positions |
 | Build | `MeshBuilder` | Incremental construction (add vertex, triangle, quad) |
-| Triangulate | `triangulate_polygon()` | Concave polygons + holes |
-| Weld | `weld_vertices()` | Distance-threshold vertex merging |
-| Recompute normals | `recompute_normals()` | Flat / Smooth modes |
+| Triangulate | `triangulate_polygon()` | Concave + holes |
+| Weld | `weld_vertices()` | Distance-threshold |
+| Recompute normals | `recompute_normals()` | Flat / Smooth |
 | Boolean (CSG) | `boolean_mesh()` | Union / Subtract / Intersect |
 
 **Planned:**
@@ -255,8 +344,6 @@ All are pure functions — input unchanged, new output returned.
 | Operation | Priority | Description |
 |---|---|---|
 | Subdivide | HIGH | Catmull-Clark (quads) and Loop (triangles) subdivision |
-| Recompute normals | HIGH | Smooth (angle-weighted), flat, and area-weighted face normals |
-| Vertex weld | HIGH | Merge vertices within distance threshold, remap indices |
 | Simplify / decimate | MEDIUM | Reduce triangle count while preserving shape (LOD) |
 | Convex hull | MEDIUM | QuickHull or gift-wrapping |
 | UV projection | MEDIUM | Planar, cylindrical, spherical automatic UV unwrap |
@@ -268,9 +355,9 @@ All are pure functions — input unchanged, new output returned.
 | Delaunay / Voronoi | LOW | 2D triangulation and Voronoi tessellation of point sets |
 | Mesh repair | LOW | Hole filling, normal flipping, non-manifold cleanup |
 
-
 > Boolean (CSG) V2 roadmap: coplanar-face overlap handling, unified intersection
-> curves (replacing the per-triangle planar arrangement), and AABB/BVH broad-phase.
+> curves (replacing the per-triangle planar arrangement), and AABB/BVH broad-phase
+> parity queries.
 
 ## 6. Spatial Queries
 
@@ -322,9 +409,8 @@ include/exd/geometry/
 ├── extrusion.hpp            # Extrusion, Lathe, Helix
 ├── deform.hpp               # DeformDescriptor (bend, twist, taper, noise)
 ├── heightmap.hpp            # Heightmap → terrain mesh
+├── loft.hpp                 # Loft / skin between cross-sections
 ├── part.hpp                 # Part/Patch/Assembly modelling layer
-├── loft.hpp                # Loft/skin operator
-├── compressor.hpp           # Compressor recipe
 └── geometry.hpp             # Umbrella header (includes all of the above)
 
 src/
@@ -348,6 +434,8 @@ src/
 │   └── extrusion.cpp
 ├── heightmap/
 │   └── heightmap.cpp
+├── loft/
+│   └── loft.cpp
 ├── deform/
 │   └── deform.cpp
 ├── part/
@@ -360,10 +448,6 @@ src/
 │   ├── rotation_gizmo.cpp
 │   ├── scale_gizmo.cpp
 │   └── deform_gizmos.cpp         # bend/twist/taper/lattice widgets
-├── turbine/
-│   └── turbine.cpp, turbine_internal.hpp
-├── loft/
-│   └── loft.cpp
 ├── compressor/
 │   └── compressor.cpp
 

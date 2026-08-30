@@ -7,8 +7,9 @@ add_executable(test_path           unit/path_test.cpp)
 add_executable(test_blend           unit/blend_test.cpp)
 add_executable(test_advanced        unit/advanced_test.cpp)
 add_executable(test_parts           unit/part_test.cpp)
-add_executable(test_loft           unit/loft_test.cpp)
-add_executable(test_compressor     unit/compressor_test.cpp)
+add_executable(test_gizmos          unit/gizmo_test.cpp)
+add_executable(test_loft            unit/loft_test.cpp)
+add_executable(test_compressor      unit/compressor_test.cpp)
 add_executable(test_steam_engine    unit/steam_engine_test.cpp)
 add_executable(test_gizmos          unit/gizmo_test.cpp)
 
@@ -21,10 +22,10 @@ set(TEST_TARGETS
     test_blend
     test_advanced
     test_parts
+    test_gizmos
     test_loft
     test_compressor
     test_steam_engine
-    test_gizmos
 )
 
 foreach(target ${TEST_TARGETS})
@@ -43,6 +44,14 @@ add_test(NAME test_spline COMMAND test_spline)
 add_executable(test_turbine unit/turbine_test.cpp)
 target_link_libraries(test_turbine PRIVATE exd-geometry exd::core doctest::doctest_with_main)
 add_test(NAME test_turbine COMMAND test_turbine)
+
+add_executable(test_noise unit/noise_test.cpp)
+target_link_libraries(test_noise PRIVATE exd-geometry exd::core doctest::doctest_with_main)
+add_test(NAME test_noise COMMAND test_noise)
+
+add_executable(test_terrain unit/terrain_test.cpp)
+target_link_libraries(test_terrain PRIVATE exd-geometry exd::core doctest::doctest_with_main)
+add_test(NAME test_terrain COMMAND test_terrain)
 
 # ── Text tests ──
 if(ENABLE_TEXT)

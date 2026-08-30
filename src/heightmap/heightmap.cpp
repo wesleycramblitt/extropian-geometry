@@ -3,6 +3,7 @@
 #include <exd/geometry/mesh_ops.hpp>
 
 #include <algorithm>
+#include <cmath>
 
 namespace exd::geometry
 {
@@ -28,7 +29,7 @@ MeshData generate_heightmap_mesh(const Heightmap& hm)
             v.position = {static_cast<float>(x) * dx - hm.size.x * 0.5f,
                           h,
                           static_cast<float>(z) * dz - hm.size.z * 0.5f};
-            v.normal   = {0, 1, 0}; // will be computed by compute_bounds
+            v.normal   = {0, 1, 0};
             v.uv       = {static_cast<float>(x) / static_cast<float>(hm.width - 1),
                           static_cast<float>(z) / static_cast<float>(hm.height - 1),
                           0};
@@ -50,7 +51,26 @@ MeshData generate_heightmap_mesh(const Heightmap& hm)
         }
     }
 
-    auto result = builder.build();
+    // Smooth per-vertex normals: accumulate unnormalized triangle normals
+    // (winding is CCW from above, so crosses point up for flat terrain),
+    // then normalize. Without this the surface would shade as if flat.
+    auto verts = builder.build();
+    std::vector<math::Vec3f> normals(verts.vertices.size(), math::Vec3f{0.0f, 0.0f, 0.0f});
+    for (size_t i = 0; i + 2 < verts.indices.size(); i += 3) {
+        const auto& a = verts.vertices[verts.indices[i]];
+        const auto& b = verts.vertices[verts.indices[i + 1]];
+        const auto& c = verts.vertices[verts.indices[i + 2]];
+        const math::Vec3f n = (b.position - a.position).cross(c.position - a.position);
+        normals[verts.indices[i]]     += n;
+        normals[verts.indices[i + 1]] += n;
+        normals[verts.indices[i + 2]] += n;
+    }
+    for (size_t i = 0; i < normals.size(); ++i) {
+        const float len = normals[i].length();
+        verts.vertices[i].normal = len > 1e-8f ? normals[i] / len : math::Vec3f{0.0f, 1.0f, 0.0f};
+    }
+
+    MeshData result = verts;
     result.bounds = compute_bounds(result.vertices);
     return result;
 }

@@ -40,6 +40,8 @@ add_library(exd-geometry STATIC
     src/turbine/turbine.cpp
     src/compressor/compressor.cpp
     src/steam_engine/steam_engine.cpp
+    src/noise/noise.cpp
+    src/terrain/terrain.cpp
     src/primitives3d/sphere.cpp
     src/primitives3d/box.cpp
     src/primitives3d/cylinder.cpp

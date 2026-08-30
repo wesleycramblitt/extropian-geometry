@@ -37,6 +37,10 @@
 #include <exd/geometry/compressor.hpp>
 #include <exd/geometry/steam_engine.hpp>
 
+// ── Noise / procedural terrain ──
+#include <exd/geometry/noise.hpp>
+#include <exd/geometry/terrain.hpp>
+
 // ── Advanced generators ──
 #include <exd/geometry/extrusion.hpp>
 #include <exd/geometry/heightmap.hpp>
