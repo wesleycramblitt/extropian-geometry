@@ -24,7 +24,21 @@ enum class DefaultFont
 class FontAtlas {
 public:
     /// Create an atlas with the given texture dimensions (power-of-2 recommended).
-    explicit FontAtlas(int atlasWidth = 512, int atlasHeight = 512);
+    ///
+    /// The atlas stores glyphs as SIGNED DISTANCE FIELDS (SDF):
+    ///   - glyphs are rasterized at `fontSize * sdfScale` pixels and converted
+    ///     to a signed distance field (negative inside the ink),
+    ///   - each packed rect includes a `sdfMargin`-pixel band of field beyond
+    ///     the ink on every side (margin in *rasterized* pixels),
+    ///   - the alpha channel holds the distance mapped to [0,1] with the
+    ///     outline at 0.5 (0 = far outside, 1 = far inside),
+    ///   - the text shader reconstructs the edge with fwidth-based smoothing,
+    ///     so glyphs stay crisp at any render scale (the classic SDF trick).
+    /// Consumers that build text meshes must map quads to the *padded* rects
+    /// (see sdf_margin_layout()); the ink itself sits at the rect center.
+    /// RGB is opaque white; only alpha carries data.
+    explicit FontAtlas(int atlasWidth = 512, int atlasHeight = 512,
+                       float sdfScale = 1.0f, int sdfMargin = 4);
     ~FontAtlas();
 
     FontAtlas(const FontAtlas&) = delete;
@@ -52,10 +66,24 @@ public:
     /// No paths are registered by default — call this to populate the search list.
     void add_font_search_path(const std::string& directory);
 
-    /// Rasterize a glyph at the given font size into the atlas.
-    /// Returns the UV rectangle (normalized 0-1 atlas coordinates) for the glyph.
-    /// If the glyph is already rasterized at this size, returns the cached rect.
+    /// Rasterize a glyph at the given font size into the atlas as an SDF.
+    /// Returns the UV rectangle (normalized 0-1 atlas coordinates) of the
+    /// PADDED region (ink + sdf margin on every side). If the glyph is
+    /// already rasterized at this size, returns the cached rect.
+    /// The atlas alpha channel is a signed distance field; see the class doc.
     Bounds rasterize_glyph(FontId font, GlyphId glyph, float fontSize);
+
+    /// Raster-space scale factor glyphs are rendered at (relative to layout
+    /// size). sdf_scale() == 1.0 means one raster texel per layout pixel.
+    float sdf_scale() const;
+
+    /// SDF margin in rasterized pixels (see class docs).
+    int sdf_margin() const;
+
+    /// SDF margin in LAYOUT units (=== device pixels at scale 1). Text meshes
+    /// must extend each glyph quad by this on every side so the field (and
+    /// the outline it encodes) is fully visible.
+    float sdf_margin_layout() const;
 
     /// Look up a previously rasterized glyph's atlas rectangle.
     /// Returns false if the glyph hasn't been rasterized yet.

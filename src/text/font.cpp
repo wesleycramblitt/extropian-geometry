@@ -19,9 +19,10 @@ namespace exd::geometry {
 namespace {
 
 // Inter-glyph gutter. GL_LINEAR sampling blends up to half a texel across a
-// UV boundary, so a bare 1px gap lets a thin glyph (e.g. capital "I", a few
-// texels wide) pick up its neighbor's opaque texel or the fully transparent
-// gutter across most of its own width, washing it out.
+// UV boundary, so a bare 1px gap lets a thin glyph pick up its neighbor's
+// texel or the transparent gutter. With SDF packing the field already decays
+// to far-outside (alpha 0) at the rect boundary, so the gutter only needs to
+// absorb the 0.5-texel bilinear reach past the rect edge.
 constexpr int kGlyphPadding = 2;
 
 // A small opaque block reserved once at atlas construction, at a fixed
@@ -30,30 +31,104 @@ constexpr int kGlyphPadding = 2;
 // atlas-textured mesh — e.g. a math fraction bar sharing a draw call with
 // its glyph quads — samples this instead of stretching UV (0,0)-(1,1)
 // across whatever happens to be packed there, which is usually mostly
-// transparent gutter and renders as an invisible hairline.
+// transparent gutter and renders as an invisible hairline. Alpha 255 maps to
+// "far inside" in the SDF shader, so the patch renders as solid fill.
 constexpr int kSolidPatchSize = 4;
 
-// Coverage->alpha is stored and blended linearly, but a partial-coverage
-// pixel over a dark background reads as much fainter than the same coverage
-// over a light one — human contrast sensitivity is roughly logarithmic, not
-// linear in the underlying light. A glyph that's mostly full-coverage
-// pixels (most letters have a wide flat stroke interior) still reads at
-// full weight; a glyph that's almost entirely partial-coverage edge (a
-// single stem like capital "I", with essentially no flat interior) reads
-// disproportionately faint. Boosting the mid-range before it ever reaches
-// the texture compensates without touching blend state or shaders, and
-// leaves fully-covered and fully-empty texels (0 and 255) untouched.
-uint8_t gamma_boost_alpha(uint8_t alpha) {
-    static const std::array<uint8_t, 256> table = [] {
-        std::array<uint8_t, 256> t{};
-        for (int i = 0; i < 256; ++i) {
-            const float coverage = static_cast<float>(i) / 255.0f;
-            const float boosted = std::pow(coverage, 1.0f / 1.4f);
-            t[i] = static_cast<uint8_t>(std::clamp(boosted * 255.0f, 0.0f, 255.0f));
+// ── Signed distance field helpers ──
+//
+// Exact squared-distance transform for 1D (Felzenszwalb & Huttenlocher,
+// "Distance Transforms of Sampled Functions", 2006). O(n) per row/column.
+// f[i] == 0 marks the "inside" sites; large finite values everywhere else.
+
+// Large finite sentinel standing in for +inf in the F&H parabola envelope.
+// Exact for distances << sqrt(kFar) (~1000 px); glyph margins are <= 8 px,
+// and the field clamps to 0/1 well before any such distance.
+constexpr float kFar = 1e6f;
+
+void edt_1d(std::span<const float> f, std::span<float> d,
+            std::vector<int>& v, std::vector<float>& z) {
+    const int n = static_cast<int>(f.size());
+    int k = 0;
+    v[0] = 0;
+    z[0] = -kFar;
+    z[1] = kFar;
+    for (int q = 1; q < n; ++q) {
+        float s = ((f[q] + static_cast<float>(q) * q) -
+                   (f[v[k]] + static_cast<float>(v[k]) * v[k])) /
+                  (2.0f * q - 2.0f * v[k]);
+        while (s <= z[k]) {
+            --k;
+            s = ((f[q] + static_cast<float>(q) * q) -
+                 (f[v[k]] + static_cast<float>(v[k]) * v[k])) /
+                (2.0f * q - 2.0f * v[k]);
         }
-        return t;
-    }();
-    return table[alpha];
+        ++k;
+        v[k] = q;
+        z[k] = s;
+        z[k + 1] = kFar;
+    }
+    k = 0;
+    for (int q = 0; q < n; ++q) {
+        while (z[k + 1] < q) ++k;
+        const float diff = static_cast<float>(q - v[k]);
+        d[q] = f[v[k]] + diff * diff;
+    }
+}
+
+// Unsigned squared distance to the mask (mask==true marks inside sites).
+// out holds the squared distances; sqrt() afterwards yields pixels.
+void edt_2d(const std::vector<uint8_t>& mask, int w, int h,
+            std::vector<float>& g) {
+    std::vector<float> f(static_cast<size_t>(w) * h, kFar);
+    std::vector<float> d(static_cast<size_t>(w) * h, 0.0f);
+    std::vector<int> v;
+    std::vector<float> z;
+
+    // columns first (into f): work buffers sized to the COLUMN length h
+    std::vector<float> col(h, kFar);
+    v.resize(h);
+    z.resize(h + 1);
+    for (int x = 0; x < w; ++x) {
+        for (int y = 0; y < h; ++y)
+            col[y] = mask[static_cast<size_t>(y) * w + x] ? 0.0f : kFar;
+        edt_1d(col, d, v, z);
+        for (int y = 0; y < h; ++y)
+            f[static_cast<size_t>(y) * w + x] = d[y];
+    }
+    // then rows (into g): work buffers sized to the ROW length w
+    std::vector<float> row(w, kFar);
+    v.resize(w);
+    z.resize(w + 1);
+    for (int y = 0; y < h; ++y) {
+        const float* fr = &f[static_cast<size_t>(y) * w];
+        edt_1d(std::span<const float>(fr, w), row, v, z);
+        for (int x = 0; x < w; ++x)
+            g[static_cast<size_t>(y) * w + x] = row[x];
+    }
+    for (auto& val : g) val = std::sqrt(val);
+}
+
+// Signed distance field: negative inside the mask, positive outside, in
+// pixels. Computed from the two unsigned transforms (to-ink and
+// to-outside), which is exact and handles arbitrary mask topology.
+void sdf_from_mask(const std::vector<uint8_t>& mask, int w, int h,
+                   std::vector<float>& out) {
+    std::vector<uint8_t> inv(mask.size());
+    for (size_t i = 0; i < mask.size(); ++i) inv[i] = mask[i] ? 0 : 1;
+    std::vector<float> din(mask.size()), dout(mask.size());
+    edt_2d(mask, w, h, din);
+    edt_2d(inv, w, h, dout);
+    out.resize(mask.size());
+    // inside: din == 0 (the pixel is in the ink) -> s = -dout < 0  (negative inside)
+    // outside: dout == 0 -> s = +din > 0
+    for (size_t i = 0; i < mask.size(); ++i)
+        out[i] = din[i] - dout[i];
+}
+
+// Raster pixel size for a layout size: layout x sdfScale (FT floors).
+float font_size_px(float fontSize, float sdfScale) {
+    return fontSize * sdfScale;
 }
 
 } // namespace
@@ -101,6 +176,10 @@ struct FontAtlas::Impl {
     int cursorY = 0;
     int rowMaxHeight = 0;
 
+    // SDF parameters (see FontAtlas class docs)
+    float sdfScale = 1.0f;
+    int   sdfMargin = 4;   // rasterized pixels
+
     // UV of the reserved opaque white patch — see kSolidPatchSize above.
     math::Vec3f solidUv{};
 
@@ -113,8 +192,9 @@ struct FontAtlas::Impl {
     // Font search paths for load_default() — user-populated via add_font_search_path()
     std::vector<std::string> fontSearchPaths;
 
-    Impl(int w, int h)
-        : width(w), height(h), pixels(static_cast<size_t>(w) * h * 4, 0)
+    Impl(int w, int h, float sdfScale_, int sdfMargin_)
+        : width(w), height(h), pixels(static_cast<size_t>(w) * h * 4, 0),
+          sdfScale(sdfScale_), sdfMargin(sdfMargin_)
     {
         FT_Error err = FT_Init_FreeType(&ftLibrary);
         if (err != FT_Err_Ok) {
@@ -156,6 +236,8 @@ struct FontAtlas::Impl {
           cursorX(other.cursorX),
           cursorY(other.cursorY),
           rowMaxHeight(other.rowMaxHeight),
+          sdfScale(other.sdfScale),
+          sdfMargin(other.sdfMargin),
           solidUv(other.solidUv),
           glyphCache(std::move(other.glyphCache)),
           metricsCache(std::move(other.metricsCache)),
@@ -187,6 +269,8 @@ struct FontAtlas::Impl {
             cursorX = other.cursorX;
             cursorY = other.cursorY;
             rowMaxHeight = other.rowMaxHeight;
+            sdfScale = other.sdfScale;
+            sdfMargin = other.sdfMargin;
             solidUv = other.solidUv;
             glyphCache = std::move(other.glyphCache);
             metricsCache = std::move(other.metricsCache);
@@ -206,8 +290,14 @@ struct FontAtlas::Impl {
 
 // ── FontAtlas ──
 
-FontAtlas::FontAtlas(int atlasWidth, int atlasHeight)
-    : impl_(std::make_unique<Impl>(atlasWidth, atlasHeight))
+FontAtlas::FontAtlas(int atlasWidth, int atlasHeight,
+                       float sdfScale, int sdfMargin)
+    // Clamp: sdfScale < 1 would rasterize below layout resolution (defeating
+    // minification headroom); sdfMargin < 1 would remove the outside field
+    // band and produce a degenerate (NaN/invisible) field.
+    : impl_(std::make_unique<Impl>(atlasWidth, atlasHeight,
+                                   std::max(sdfScale, 1.0f),
+                                   std::max(sdfMargin, 1)))
 {
     // Initialize default font paths including bundled fonts
     initialize_default_paths();
@@ -300,15 +390,22 @@ Bounds FontAtlas::rasterize_glyph(FontId font, GlyphId glyph, float fontSize) {
 
     FT_Face face = faceIt->second;
 
-    // Set pixel size
-    FT_Error err = FT_Set_Pixel_Sizes(face, 0, static_cast<FT_UInt>(fontSize));
+    // Set pixel size: an EXACT multiple of the layout size used by shaping
+    // and metrics (static_cast<FT_UInt> floors). Using floor(fs) * sdfScale
+    // — instead of floor(fs * sdfScale) — keeps the quad<->uv ratio exactly
+    // sdfScale for fractional font sizes (e.g. 12.5 -> 12*2 = 24, not
+    // floor(25)=25 which would inflate the ink ~4-6% against 12px metrics).
+    const FT_UInt baseSize = static_cast<FT_UInt>(fontSize);
+    const FT_UInt rasterSize = baseSize > 0 ? static_cast<FT_UInt>(baseSize * impl_->sdfScale) : 0;
+    if (rasterSize == 0) return zeroRect;
+    FT_Error err = FT_Set_Pixel_Sizes(face, 0, rasterSize);
     if (err != FT_Err_Ok) return zeroRect;
 
-    // Load glyph
+    // Load glyph (same flags as metric lookup, so bitmap and metrics agree)
     err = FT_Load_Glyph(face, glyph, FT_LOAD_DEFAULT);
     if (err != FT_Err_Ok) return zeroRect;
 
-    // Render glyph
+    // Render glyph coverage at the raster size; the SDF is derived from it
     err = FT_Render_Glyph(face->glyph, FT_RENDER_MODE_NORMAL);
     if (err != FT_Err_Ok) return zeroRect;
 
@@ -317,9 +414,12 @@ Bounds FontAtlas::rasterize_glyph(FontId font, GlyphId glyph, float fontSize) {
 
     int bw = static_cast<int>(bitmap.width);
     int bh = static_cast<int>(bitmap.rows);
+    const int M = std::max(impl_->sdfMargin, 0);
+    const int wp = bw + 2 * M;   // padded rect: ink + margin band
+    const int hp = bh + 2 * M;
 
     // Check if glyph fits on current row
-    if (impl_->cursorX + bw > impl_->width) {
+    if (impl_->cursorX + wp > impl_->width) {
         // Advance to next row
         impl_->cursorY += impl_->rowMaxHeight + kGlyphPadding;
         impl_->cursorX = 0;
@@ -327,61 +427,65 @@ Bounds FontAtlas::rasterize_glyph(FontId font, GlyphId glyph, float fontSize) {
     }
 
     // Check if glyph fits vertically
-    if (impl_->cursorY + bh > impl_->height) {
+    if (impl_->cursorY + hp > impl_->height) {
         // Atlas is full - return zero rect for v1
         return zeroRect;
     }
 
-    // Copy bitmap into atlas (grayscale -> RGBA with white color), then
-    // extend a 1px clamped-edge border into this glyph's own padding
-    // gutter. GL_LINEAR sampling exactly at the UV rect boundary reaches up
-    // to 0.5 texel past it; without this, that reach lands on fully
-    // transparent gutter and blends every edge toward zero alpha. For a
-    // wide glyph that is an imperceptible sliver, but a stroke as thin as
-    // capital "I" is little else BUT edge, so the whole glyph reads as
-    // faint/washed out. Duplicating the true edge alpha into the 1px border
-    // instead means that boundary sample blends with a copy of the glyph's
-    // own edge — full-size UVs, no inset needed, no crop, no fade. (An
-    // earlier version fixed the same bleed by insetting the UV rect half a
-    // texel on every side instead; that avoided the neighbor blend too, but
-    // it also uniformly cropped ~5% off every glyph's own height/width.)
-    int pitch = static_cast<int>(bitmap.pitch);
-    constexpr int kEdgeExtend = 1;
-    for (int y = -kEdgeExtend; y < bh + kEdgeExtend; ++y) {
-        const int srcY = std::clamp(y, 0, bh - 1);
-        const int destY = impl_->cursorY + y;
-        if (destY < 0 || destY >= impl_->height) continue;
-        for (int x = -kEdgeExtend; x < bw + kEdgeExtend; ++x) {
-            const int srcX = std::clamp(x, 0, bw - 1);
-            const int destX = impl_->cursorX + x;
-            if (destX < 0 || destX >= impl_->width) continue;
-            const int srcIdx = srcY * pitch + srcX;
-            const int dstIdx = (destY * impl_->width + destX) * 4;
-            uint8_t alpha = gamma_boost_alpha(bitmap.buffer[srcIdx]);
+    // Build the inside-mask over the padded rect (ink at (M, M)) from the
+    // rendered coverage, then convert to a signed distance field.
+    std::vector<uint8_t> mask(static_cast<size_t>(wp) * hp, 0);
+    const int pitch = static_cast<int>(bitmap.pitch);
+    for (int y = 0; y < bh; ++y) {
+        for (int x = 0; x < bw; ++x) {
+            const uint8_t cov = bitmap.buffer[static_cast<size_t>(y) * pitch + x];
+            if (cov >= 128)
+                mask[static_cast<size_t>(y + M) * wp + (x + M)] = 1;
+        }
+    }
+    std::vector<float> sdf;
+    sdf_from_mask(mask, wp, hp, sdf);
+
+    // Encode the field into the alpha channel:
+    //   alpha = clamp(0.5 - signed_dist / (2 * margin), 0, 1)
+    // so the outline sits at 0.5, far-inside at 1, far-outside at 0. The
+    // shader reconstructs the edge with fwidth-based smoothing, yielding
+    // sub-pixel crisp glyphs at any render scale. RGB stays opaque white.
+    const float inv2M = 1.0f / (2.0f * static_cast<float>(M));
+    for (int y = 0; y < hp; ++y) {
+        for (int x = 0; x < wp; ++x) {
+            const float dist = sdf[static_cast<size_t>(y) * wp + x];
+            const float a = std::clamp(0.5f - dist * inv2M, 0.0f, 1.0f);
+            const int dstIdx = ((impl_->cursorY + y) * impl_->width +
+                                (impl_->cursorX + x)) * 4;
             impl_->pixels[dstIdx + 0] = 255; // R
             impl_->pixels[dstIdx + 1] = 255; // G
             impl_->pixels[dstIdx + 2] = 255; // B
-            impl_->pixels[dstIdx + 3] = alpha; // A
+            impl_->pixels[dstIdx + 3] = static_cast<uint8_t>(a * 255.0f + 0.5f); // A
         }
     }
 
-    // Compute normalized UV rect over the glyph's exact rasterized bounds.
-    // kGlyphPadding (2px) keeps the 1px clamped border above, plus the
-    // 0.5-texel bilinear reach past it, safely inside the gutter and away
-    // from a neighboring glyph.
+    // Compute normalized UV rect over the PADDED region (the ink sits at
+    // the rect center; quad generation must map quads to this full rect,
+    // see sdf_margin_layout()). kGlyphPadding keeps the 0.5-texel bilinear
+    // reach past the rect boundary safely inside the gutter.
     Bounds rect;
     rect.min.x = static_cast<float>(impl_->cursorX) / static_cast<float>(impl_->width);
     rect.min.y = static_cast<float>(impl_->cursorY) / static_cast<float>(impl_->height);
-    rect.max.x = static_cast<float>(impl_->cursorX + bw) / static_cast<float>(impl_->width);
-    rect.max.y = static_cast<float>(impl_->cursorY + bh) / static_cast<float>(impl_->height);
+    rect.max.x = static_cast<float>(impl_->cursorX + wp) / static_cast<float>(impl_->width);
+    rect.max.y = static_cast<float>(impl_->cursorY + hp) / static_cast<float>(impl_->height);
     rect.min.z = 0.0f;
     rect.max.z = 0.0f;
 
     // Update cursor
-    impl_->cursorX += bw + kGlyphPadding;
-    impl_->rowMaxHeight = std::max(impl_->rowMaxHeight, bh);
+    impl_->cursorX += wp + kGlyphPadding;
+    impl_->rowMaxHeight = std::max(impl_->rowMaxHeight, hp);
 
-    // Cache metrics
+    // Cache metrics (in LAYOUT space — the cache is shared with
+    // get_glyph_metrics, which reports layout-scale values; the raster slot
+    // is sdfScale larger). Only seed when shaping has not populated the
+    // entry already: measurement and rendering must observe one stable
+    // metric set, and the rounded bitmap dims are an approximation.
     float advance = static_cast<float>(face->glyph->advance.x) / 64.0f;
     float bearingY = 0.0f;
     {
@@ -390,14 +494,11 @@ Bounds FontAtlas::rasterize_glyph(FontId font, GlyphId glyph, float fontSize) {
         bearingY = static_cast<float>(bbox.yMin) / 64.0f;
     }
     CachedMetrics metrics{
-        advance,
-        static_cast<float>(bw),
-        static_cast<float>(bh),
-        bearingY
+        advance / impl_->sdfScale,
+        static_cast<float>(bw) / impl_->sdfScale,
+        static_cast<float>(bh) / impl_->sdfScale,
+        bearingY / impl_->sdfScale
     };
-    // Shaping may already have cached subpixel outline metrics for this glyph.
-    // Do not replace them with rounded bitmap dimensions during rasterization;
-    // measurement and rendering must observe one stable metric set.
     impl_->metricsCache.try_emplace(key, metrics);
 
     // Cache rect
@@ -506,6 +607,22 @@ void* FontAtlas::create_hb_font(FontId font, float fontSize) const {
 
 math::Vec3f FontAtlas::solid_uv() const {
     return impl_ ? impl_->solidUv : math::Vec3f{};
+}
+
+float FontAtlas::sdf_scale() const {
+    return impl_ ? impl_->sdfScale : 1.0f;
+}
+
+int FontAtlas::sdf_margin() const {
+    return impl_ ? impl_->sdfMargin : 0;
+}
+
+float FontAtlas::sdf_margin_layout() const {
+    if (!impl_ || impl_->sdfScale <= 0.0f) return 0.0f;
+    // margin is specified in raster pixels; in layout units it shrinks by
+    // the raster scale (margin/scale), i.e. equals the margin in device
+    // pixels when scale == 1.
+    return static_cast<float>(impl_->sdfMargin) / impl_->sdfScale;
 }
 
 void FontAtlas::initialize_default_paths() {

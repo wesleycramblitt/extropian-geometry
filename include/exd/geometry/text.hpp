@@ -112,7 +112,8 @@ std::unique_ptr<TextShaper> create_harfbuzz_shaper(const FontAtlas& atlas);
 /// The quad is placed at glyph.position with dimensions glyph.size, UV-mapped to atlasRect.
 /// An optional vertex color can be applied (defaults to white).
 MeshData generate_glyph_mesh(const GlyphPlacement& glyph,
-                              math::Quat color = {1.0f, 1.0f, 1.0f, 1.0f});
+                              math::Quat color = {1.0f, 1.0f, 1.0f, 1.0f},
+                              float sdfMarginLayout = 0.0f);
 
 /// Generate a combined mesh for all glyphs in a shaped text run.
 /// Calls rasterize_glyph on atlas for any glyphs that haven't been rasterized yet.

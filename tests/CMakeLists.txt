@@ -68,4 +68,15 @@ if(ENABLE_TEXT)
     )
     target_link_libraries(test_text PRIVATE ${FREETYPE_LIBRARIES} ${HARFBUZZ_LIBRARIES})
     add_test(NAME test_text COMMAND test_text)
+
+    add_executable(test_sdf_atlas unit/sdf_atlas_test.cpp)
+    target_link_libraries(test_sdf_atlas PRIVATE exd-geometry exd::core doctest::doctest_with_main)
+    target_include_directories(test_sdf_atlas PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src
+        ${FREETYPE_INCLUDE_DIRS}
+        ${HARFBUZZ_INCLUDE_DIRS}
+    )
+    target_link_libraries(test_sdf_atlas PRIVATE ${FREETYPE_LIBRARIES} ${HARFBUZZ_LIBRARIES})
+    add_test(NAME test_sdf_atlas COMMAND test_sdf_atlas)
 endif()

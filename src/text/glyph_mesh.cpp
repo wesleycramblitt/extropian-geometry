@@ -4,14 +4,18 @@
 
 namespace exd::geometry {
 
-MeshData generate_glyph_mesh(const GlyphPlacement& glyph, math::Quat color) {
+MeshData generate_glyph_mesh(const GlyphPlacement& glyph, math::Quat color,
+                               float sdfMarginLayout) {
     MeshBuilder builder;
     builder.reserve(4, 6);
 
-    float x = glyph.position.x;
-    float y = glyph.position.y + glyph.size.z;  // offset by descender bearing
-    float w = glyph.size.x;
-    float h = glyph.size.y;
+    // SDF atlases pack each glyph as ink + margin band; the quad must cover
+    // the full padded rect (ink offset by the margin) so the outline
+    // encoded by the field is fully visible. Margin 0 = classic 1:1 rects.
+    float x = glyph.position.x - sdfMarginLayout;
+    float y = glyph.position.y + glyph.size.z - sdfMarginLayout;  // descender bearing
+    float w = glyph.size.x + 2.0f * sdfMarginLayout;
+    float h = glyph.size.y + 2.0f * sdfMarginLayout;
 
     float u0 = glyph.atlasRect.min.x;
     float v0 = glyph.atlasRect.min.y;
@@ -40,6 +44,12 @@ MeshData generate_glyph_mesh(const GlyphPlacement& glyph, math::Quat color) {
 MeshData generate_text_mesh(const ShapedText& shaped, FontAtlas& atlas, math::Quat color) {
     MeshBuilder builder;
 
+    // SDF atlases pack each glyph as ink + a margin band of field; the quad
+    // must cover the whole padded rect so the encoded outline is visible at
+    // any render scale. atlasRect is already the padded rect (see
+    // FontAtlas::rasterize_glyph); extend the quad by the same margin.
+    const float ml = atlas.sdf_margin_layout();
+
     for (const auto& gp : shaped.glyphs) {
         Bounds rect = gp.atlasRect;
 
@@ -55,11 +65,12 @@ MeshData generate_text_mesh(const ShapedText& shaped, FontAtlas& atlas, math::Qu
         // gp.position.y is the baseline (0 for horizontal text).
         // gp.size.z is the yMin bearing from the bbox (negative for descenders).
         // Offset the quad downward by the bearing so the glyph content
-        // (including descenders) is fully covered.
-        float x = gp.position.x;
-        float y = gp.position.y + gp.size.z;
-        float w = gp.size.x;
-        float h = gp.size.y;
+        // (including descenders) is fully covered, then by the SDF margin so
+        // the quad covers the full padded field rect.
+        float x = gp.position.x - ml;
+        float y = gp.position.y + gp.size.z - ml;
+        float w = gp.size.x + 2.0f * ml;
+        float h = gp.size.y + 2.0f * ml;
 
         float u0 = gp.atlasRect.min.x;
         float v0 = gp.atlasRect.min.y;
