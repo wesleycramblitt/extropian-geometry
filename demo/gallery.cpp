@@ -72,6 +72,7 @@ struct Gallery
     float blend_radius = 0.20f;
 
     long frame = 0;
+    int  last_printed_tab = -1;   // headless verification support
 };
 
 struct TabDef
@@ -586,8 +587,13 @@ static void print_help()
     std::printf("  FPS:    WASD/QE fly, mouse look\n\n");
 }
 
-int main()
+// Optional argv: <start_tab> [max_frames] — used by automated tab sweeps
+// (headless verification): ./extropian-geometry-gallery 11 90
+int main(int argc, char** argv)
 {
+    int start_tab  = (argc > 1) ? std::atoi(argv[1]) : 0;
+    int max_frames = (argc > 2) ? std::atoi(argv[2]) : -1;
+
     app::WindowDesc desc;
     desc.title = "extropian-geometry · gallery";
     desc.width = 1280;
@@ -664,14 +670,17 @@ int main()
                 for (int i = 0; i < kTabCount; ++i)
                 {
                     bool open = true;
-                    if (ImGui::BeginTabItem(kTabs[i].name, &open))   // only when selected
+                    if (ImGui::BeginTabItem(kTabs[i].name, &open))   // selected item body
                     {
-                        ImGui::EndTabItem();
-                        if (g.current_tab != i)
+                        // React to explicit clicks only — ImGui auto-selects the
+                        // first item when nothing has been clicked yet, which
+                        // must not override an argv/initial current_tab.
+                        if (ImGui::IsItemClicked())
                         {
                             g.current_tab = i;
                             g.build_now = true;
                         }
+                        ImGui::EndTabItem();
                     }
                     (void)open;
                 }
@@ -698,7 +707,7 @@ int main()
         true);
 
     // ── initial tab ─────────────────────────────────────────────────
-    g.current_tab = 0;
+    g.current_tab = std::clamp(start_tab, 0, kTabCount - 1);
     g.build_now = true;
     print_help();
 
@@ -713,6 +722,8 @@ int main()
         const double dt = (now - last_ticks) / 1000.0;
         last_ticks = now;
         ++g.frame;
+        if (max_frames > 0 && g.frame >= static_cast<long>(max_frames))
+            window.close();
 
         window.poll_events();
         const auto& win_events = window.events();
@@ -745,6 +756,13 @@ int main()
             infoBuf = g.info;
             frame_camera(g, reg, kTabs[g.current_tab]);
             g.build_now = false;
+            if (g.last_printed_tab != g.current_tab)
+            {
+                g.last_printed_tab = g.current_tab;
+                std::printf("[gallery] tab %d '%s' built: meshes=%2zu entities=%2zu\n",
+                            g.current_tab, kTabs[g.current_tab].name,
+                            g.meshes.size(), g.entities.size());
+            }
         }
 
         cam_sys.update(reg, dt);
