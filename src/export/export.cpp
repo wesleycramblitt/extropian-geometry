@@ -99,6 +99,18 @@ std::string to_obj(const MeshData& mesh)
     return to_obj_inner(mesh);
 }
 
+std::string to_obj(const CADModel& model)
+{
+    std::ostringstream os;
+    for (size_t i = 0; i < model.parts.size(); ++i)
+    {
+        const Part& p = model.parts[i];
+        os << "o " << (p.name.empty() ? ("part_" + std::to_string(i)) : p.name) << "\n";
+        os << to_obj_inner(p.mesh);
+    }
+    return os.str();
+}
+
 ExportBundle to_mjcf(const Mechanism& mech, std::span<const Part> parts,
                      const ExportOptions& options)
 {

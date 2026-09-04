@@ -245,15 +245,15 @@ CADModel make_cad_model(std::string name, std::span<const Part> parts,
 
 ## 5. Adapter mapping (planned, Phase B)
 
-| Adapter | Scope | Projection notes |
-|---|---|---|
-| `to_obj` (exists) | surface mesh | geometry only |
-| `to_stl` (binary+ascii) | tessellation | geometry only; universal CAE carrier |
-| `to_msh` (Gmsh) | surface mesh | **PhysicalVolumes = regions, PhysicalSurfaces = patches** (1:1); semantic + mesh_size ride as element/entity attributes |
-| `to_vtk`/`to_vtu` | mesh + region data | CellData = region/patch IDs, PointData = part IDs |
-| `to_step_tessellated` | CAD | AP242 tessellated B-rep; named faces → `NAME_ATTRIBUTE`, materials → `PROPERTY_DEFINITION`; deterministic entity numbering |
-| `to_mjcf` / `to_urdf` (exist) | physics | mechanism slice; contact = `meta.contact` parts; density from material resolution |
-| analytic `to_step` (via extropian-cad) | CAD | full BREP; future |
+| Adapter | Scope | Projection notes | Status |
+|---|---|---|---|
+| `to_obj` | surface mesh | geometry only | ✅ (MeshData + CADModel) |
+| `to_stl` | tessellation | ascii + binary; binary is the CAE default; per-solid header per part | ✅ Phase B |
+| `to_msh` (Gmsh) | surface mesh | **PhysicalSurfaces = patches** 1:1; unpatched faces → part-level group; region volume groups deferred (no volume mesh) | ✅ Phase B |
+| `to_vtk` / `to_vtu` | mesh + region data | CellData = PartID (0-based) + PatchID (1-based global enum) | ✅ Phase B |
+| `to_step_faceted` | CAD | faceted solid B-rep (AP203/214) per watertight part — deterministic, imports anywhere; AP242 tessellated entities deferred to the OCCT gate (D17) | ✅ Phase B |
+| `to_mjcf` / `to_urdf` | physics | mechanism slice; contact = `meta.contact` parts; density from material resolution | ✅ (existing) |
+| analytic `to_step` (via extropian-cad) | CAD | full BREP; future | 🔜 extropian-cad |
 
 All adapters are deterministic writers; same model → byte-identical output.
 

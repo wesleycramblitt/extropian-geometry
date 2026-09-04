@@ -43,6 +43,9 @@ add_library(exd-geometry STATIC
     src/mechanism/mechanism.cpp
     src/cad_model/cad_model.cpp
     src/export/export.cpp
+    src/export/vtk.cpp
+    src/export/msh.cpp
+    src/export/stl.cpp
     src/noise/noise.cpp
     src/terrain/terrain.cpp
     src/primitives3d/sphere.cpp
