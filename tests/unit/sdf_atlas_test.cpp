@@ -22,7 +22,10 @@ std::string resolve_font_dir()
         return std::string(env) + "/";
     for (const char* sys : {"/usr/share/fonts/TTF/",
                              "/usr/share/fonts/liberation/",
-                             "/usr/share/fonts/noto/"}) {
+                             "/usr/share/fonts/noto/",
+                             "/usr/share/fonts/truetype/dejavu/",
+                             "/usr/share/fonts/truetype/liberation/",
+                             "/usr/share/fonts/truetype/noto/"}) {
         if (std::filesystem::exists(std::string(sys) + "DejaVuSans.ttf"))
             return sys;
     }
