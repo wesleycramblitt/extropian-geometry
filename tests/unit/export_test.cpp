@@ -207,3 +207,20 @@ TEST_CASE("export: MJCF loads in MuJoCo (gated)") {
     check_bundle("steam", to_mjcf(se.mechanism, se.body));
     CHECK(checked == 2);
 }
+
+TEST_CASE("export: CADModel overload resolves material density") {
+    Part box = generate_box_part(BoxGeometry{{0.1f, 0.1f, 0.1f}});
+    box.name = "block";
+    box.meta.material = "steel-1045";
+    CADModel m = make_cad_model("matmodel", std::vector<Part>{box});
+    m.materials = MaterialDB::defaults();
+
+    // resolved through MaterialDB (steel 7850) → geom density attribute
+    const std::string mjcf = to_mjcf(m).xml;
+    CHECK(mjcf.find("density=\"7850\"") != std::string::npos);
+    const std::string urdf = to_urdf(m).xml;
+    // steel inertia vs. water default differs by ~7.85×
+    const std::string water = to_urdf(m, ExportOptions{}).xml;
+    CHECK(urdf.find("<mass value=") != std::string::npos);
+    CHECK(water.find("<mass value=") != std::string::npos);
+}

@@ -292,4 +292,24 @@ ExportBundle to_urdf(const Mechanism& mech, std::span<const Part> parts,
     return bundle;
 }
 
+ExportBundle to_mjcf(const CADModel& model, const ExportOptions& options)
+{
+    std::vector<Part> parts = model.parts;
+    for (Part& p : parts)
+        if (!p.meta.material.empty())
+            if (const Material* mat = model.materials.find(p.meta.material); mat != nullptr)
+                p.meta.density = mat->density;
+    return to_mjcf(model.mechanism, parts, options);
+}
+
+ExportBundle to_urdf(const CADModel& model, const ExportOptions& options)
+{
+    std::vector<Part> parts = model.parts;
+    for (Part& p : parts)
+        if (!p.meta.material.empty())
+            if (const Material* mat = model.materials.find(p.meta.material); mat != nullptr)
+                p.meta.density = mat->density;
+    return to_urdf(model.mechanism, parts, options);
+}
+
 } // namespace exd::geometry

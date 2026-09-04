@@ -53,6 +53,13 @@ ExportBundle to_mjcf(const Mechanism& mech, std::span<const Part> parts,
 ExportBundle to_urdf(const Mechanism& mech, std::span<const Part> parts,
                      const ExportOptions& options = {});
 
+/// CADModel overloads: per-part density is resolved through the model's
+/// MaterialDB (parts with an unresolved/empty `meta.material` keep their
+/// declared density, falling back to `options.default_density`). Mechanism is
+/// read from `model.mechanism`; both exporters keep all other behaviour.
+ExportBundle to_mjcf(const CADModel& model, const ExportOptions& options = {});
+ExportBundle to_urdf(const CADModel& model, const ExportOptions& options = {});
+
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  CAE adapters (Phase B, docs/cad-model.md §5) — deterministic writers over
