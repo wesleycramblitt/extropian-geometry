@@ -93,9 +93,8 @@ std::string to_vtu(const CADModel& model);
 /// STEP faceted solid B-rep export options.
 struct StepOptions
 {
-    std::string  schema      = "AUTOMOTIVE_DESIGN";       // FILE_SCHEMA name (ADD for OCCT sibling later)
+    std::string  schema      = "AUTOMOTIVE_DESIGN";       // FILE_SCHEMA name (AP242 via OCCT sibling later)
     std::string  model_name  = "model";
-    bool         emit_loops  = true;   // include FACE_OUTER_BOUND edge loops (full solid BREP)
 };
 
 /// ISO 10303-21 text; one ADVANCED_BREP_SHAPE_REPRESENTATION per part.

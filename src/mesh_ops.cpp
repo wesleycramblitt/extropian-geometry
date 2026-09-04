@@ -728,7 +728,7 @@ Bounds positions_bounds(std::span<const math::Vec3f> pos)
 // manifold VERTICES are not diagnosed (two cubes touching at a point pass —
 // accepted V1 limitation).
 
-bool closed_manifold_gate(const MeshData& m, float posEps)
+bool closed_manifold_gate_internal(const MeshData& m, float posEps)
 {
     const size_t nv = m.vertices.size();
     const size_t ni = m.indices.size();
@@ -2098,7 +2098,7 @@ MeshData boolean_mesh(const MeshData& a, const MeshData& b, BooleanOp op,
     const MeshData mB = normalize_to_outward(b, volBOk);
     if (!volAOk || !volBOk)
         return {};
-    if (!closed_manifold_gate(mA, posEpsA) || !closed_manifold_gate(mB, posEpsB))
+    if (!closed_manifold_gate_internal(mA, posEpsA) || !closed_manifold_gate_internal(mB, posEpsB))
         return {};
 
     // ── Canonical maps for the split loop ──
@@ -2176,7 +2176,7 @@ MeshData boolean_mesh(const MeshData& a, const MeshData& b, BooleanOp op,
     const float od2 = (ob2.max - ob2.min).length();
     if (od2 <= 0.0f)
         return {};
-    if (!closed_manifold_gate(result, 1e-7f * od2))
+    if (!closed_manifold_gate_internal(result, 1e-7f * od2))
         return {};
 
     result.bounds = compute_bounds(result.vertices);
@@ -2287,6 +2287,12 @@ MassProperties mesh_properties(const MeshData& mesh, float density)
         static_cast<float>(ixz), static_cast<float>(iyz), static_cast<float>(izz),
     };
     return mp;
+}
+
+// ── Public watertight gate (exposed for CAE exporters / validation) ──
+bool closed_manifold_gate(const MeshData& m, float posEps)
+{
+    return closed_manifold_gate_internal(m, posEps);
 }
 
 } // namespace exd::geometry

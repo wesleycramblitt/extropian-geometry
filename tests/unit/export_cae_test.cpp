@@ -5,7 +5,11 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
+#include <cctype>
+#include <filesystem>
+#include <fstream>
 #include <cstdlib>
+#include <set>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -177,6 +181,115 @@ TEST_CASE("cae_export: vtk legacy emits grid, types and cell scalars") {
     }
     REQUIRE(zeros.size() == 12);
     CHECK(std::all_of(zeros.begin(), zeros.end(), [](int x) { return x == 0; }));
+}
+
+bool step_refs_consistent(const std::string& s, size_t& nDefined, size_t& nUsed)
+{
+    std::set<int> defined, used;
+    nDefined = nUsed = 0;
+    size_t i = 0;
+    while ((i = s.find('#', i)) != std::string::npos)
+    {
+        size_t j = i + 1;
+        int v = 0;
+        bool ok = false;
+        while (j < s.size() && std::isdigit(static_cast<unsigned char>(s[j])))
+        {
+            v = v * 10 + (s[j] - '0');
+            ok = true;
+            ++j;
+        }
+        if (!ok || v <= 0)
+        {
+            ++i;
+            continue;
+        }
+        if (j < s.size() && s[j] == '=')
+        {
+            defined.insert(v);
+            ++nDefined;
+        }
+        else
+        {
+            used.insert(v);
+        }
+        i = j;
+    }
+    nUsed = used.size();
+    for (const int r : used)
+        if (!defined.count(r))
+            return false;
+    return true;
+}
+
+size_t char_count(const std::string& s, char c)
+{
+    return static_cast<size_t>(std::count(s.begin(), s.end(), c));
+}
+
+TEST_CASE("cae_export: step faceted brep emits closed solid per watertight part") {
+    const CADModel m = box_model();
+    const std::string st = to_step_faceted(m);
+
+    CHECK(st.find("ISO-10303-21;") != std::string::npos);
+    CHECK(st.find("FILE_SCHEMA(('AUTOMOTIVE_DESIGN") != std::string::npos);
+    // one closed solid: box has 12 triangles → 12 ADVANCED_FACEs
+    CHECK(count_substr(st, "MANIFOLD_SOLID_BREP") == 1);
+    CHECK(count_substr(st, "CLOSED_SHELL") == 1);
+    CHECK(count_substr(st, "ADVANCED_FACE") == 12);
+    CHECK(st.rfind("END-ISO-10303-21;") != std::string::npos);
+    CHECK(st.find("ENDSEC;\nEND-ISO-10303-21;") != std::string::npos);
+
+    // entity references are internally consistent + parens balanced
+    size_t nDef = 0, nUse = 0;
+    CHECK(step_refs_consistent(st, nDef, nUse));
+    REQUIRE(nDef > 0);
+    CHECK(char_count(st, '(') == char_count(st, ')'));
+}
+
+TEST_CASE("cae_export: step skips non-watertight parts") {
+    CADModel m = make_cad_model("open", std::vector<Part>{
+        as_part("open_plane", generate_plane_mesh(PlaneGeometry{})),   // 2 triangles, open
+        generate_box_part(BoxGeometry{{1.0f, 1.0f, 1.0f}})});
+    const std::string st = to_step_faceted(m);
+    CHECK(count_substr(st, "MANIFOLD_SOLID_BREP") == 1);   // only the box
+    CHECK(st.find("open_plane") == std::string::npos);
+    // determinism
+    CHECK(to_step_faceted(m) == st);
+}
+
+TEST_CASE("cae_export: step two-part model has two named solids") {
+    const std::string st = to_step_faceted(cae_model());
+    CHECK(count_substr(st, "MANIFOLD_SOLID_BREP") == 2);
+    CHECK(st.find("PRODUCT('casing'") != std::string::npos);
+    CHECK(st.find("PRODUCT('rotor'") != std::string::npos);
+    size_t nDef = 0, nUse = 0;
+    CHECK(step_refs_consistent(st, nDef, nUse));
+    CHECK(char_count(st, '(') == char_count(st, ')'));
+}
+
+// ── Gated STEP round-trip (runs only where gmsh + OCC exist) ──
+bool gmsh_available()
+{
+    const int rc = std::system("command -v gmsh >/dev/null 2>&1");
+    return rc == 0;
+}
+
+TEST_CASE("cae_export: step loads in gmsh (gated)") {
+    if (!gmsh_available())
+    {
+        MESSAGE("skipped: gmsh executable not available");
+        return;
+    }
+    const std::filesystem::path dir = std::filesystem::temp_directory_path();
+    const auto path = dir / "exd_step_gate.step";
+    {
+        std::ofstream f(path);
+        f << to_step_faceted(cae_model());
+    }
+    const std::string cmd = "gmsh " + path.string() + " -o /dev/null 2>/dev/null";
+    CHECK(std::system(cmd.c_str()) == 0);
+    std::filesystem::remove(path);
 }
 
 TEST_CASE("cae_export: vtu xml is structurally consistent") {

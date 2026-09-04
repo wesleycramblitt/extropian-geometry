@@ -57,6 +57,14 @@ enum class BooleanOp
     Intersect  // a ∩ b
 };
 
+/// Closed-manifold gate: every undirected edge is shared by exactly two
+/// triangles with oppositely directed occurrences (position-canonicalized so
+/// un-welded generator output passes; non-manifold VERTICES are not
+/// diagnosed). Returns false for empty/non-triangle input. `posEps` must be
+/// > 0 — the boolean kernels use a scale-relative 1e-7·diag; exporters gate
+/// on the same predicate (faceted STEP, D16).
+bool closed_manifold_gate(const MeshData& m, float posEps);
+
 /// Boolean operation on two closed, consistently oriented triangle meshes.
 /// Returns an empty MeshData when: either input is empty; either input fails
 /// the closed-manifold gate (boundary edges, non-manifold edges, or
