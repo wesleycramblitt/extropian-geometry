@@ -22,10 +22,15 @@ static std::string resolve_font_dir()
     if (const char* env = std::getenv("EXD_TEST_FONT_DIR"))
         return std::string(env) + "/";
 
-    // 2. System fallback (Linux)
+    // 2. System fallback (Linux — covers both the historical
+    //    /usr/share/fonts/TTF + liberation + noto and the Debian/Ubuntu
+    //    /usr/share/fonts/truetype/* layout)
     for (const char* sys : {"/usr/share/fonts/TTF/",
                              "/usr/share/fonts/liberation/",
-                             "/usr/share/fonts/noto/"}) {
+                             "/usr/share/fonts/noto/",
+                             "/usr/share/fonts/truetype/dejavu/",
+                             "/usr/share/fonts/truetype/liberation/",
+                             "/usr/share/fonts/truetype/noto/"}) {
         if (std::filesystem::exists(std::string(sys) + "DejaVuSans.ttf"))
             return sys;
     }
