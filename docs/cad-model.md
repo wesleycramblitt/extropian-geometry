@@ -262,7 +262,7 @@ All adapters are deterministic writers; same model → byte-identical output.
 | Class | Formats | Owner | Status |
 |---|---|---|---|
 | Tessellated / lightweight | STL, OBJ, Gmsh MSH (PLY, glTF, 3MF later) | **in-repo, pure C++, WASM-clean** | ✅ Phase C |
-| Analytic / BREP | STEP, IGES, BREP | **extropian-cad (OCCT)** only — never hand-rolled BREP parsers | 🔜 extropian-cad |
+| Analytic / BREP | STEP, IGES, BREP | **extropian-cad (OCCT)** only — never hand-rolled BREP parsers | ✅ scaffolded — [wesleycramblitt/extropian-cad](https://github.com/wesleycramblitt/extropian-cad) (exd::cad: import_step/iges/brep, export_step, cad-cli; stub backend builds without OCCT; CI-verified) |
 
 Importers produce `CADModel`.
 - `parse_stl` auto-detects ascii/binary (multi-solid binary supported);
