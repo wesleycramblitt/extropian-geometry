@@ -1,6 +1,7 @@
 #include <exd/geometry/deform.hpp>
 #include <exd/geometry/mesh_ops.hpp>
 
+#include <algorithm>
 #include <cmath>
 
 namespace exd::geometry

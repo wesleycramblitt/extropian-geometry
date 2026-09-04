@@ -1,6 +1,7 @@
 #include <exd/geometry/primitives2d.hpp>
 #include <exd/geometry/mesh_builder.hpp>
 
+#include <algorithm>
 #include <cmath>
 
 namespace exd::geometry
