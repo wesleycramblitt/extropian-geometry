@@ -59,7 +59,7 @@ normal recomputation, vertex welding, and mesh booleans. See
 ```bash
 ./build.sh          # library
 ./test.sh           # library + unit tests
-./demo.sh           # optional 3D viewer (fetches extropian-render)
+./demo.sh           # tab-through gallery (fetches extropian-render)
 ```
 
 Override the core dependency path for local development:
