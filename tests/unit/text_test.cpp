@@ -828,7 +828,10 @@ static void register_default_font_paths(FontAtlas& atlas)
     // Add common Linux font directories
     for (const char* dir : {"/usr/share/fonts/TTF",
                              "/usr/share/fonts/liberation",
-                             "/usr/share/fonts/noto"}) {
+                             "/usr/share/fonts/noto",
+                             "/usr/share/fonts/truetype/dejavu",
+                             "/usr/share/fonts/truetype/liberation",
+                             "/usr/share/fonts/truetype/noto"}) {
         if (std::filesystem::exists(dir))
             atlas.add_font_search_path(dir);
     }
