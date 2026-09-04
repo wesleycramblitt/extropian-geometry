@@ -47,6 +47,7 @@ add_library(exd-geometry STATIC
     src/export/msh.cpp
     src/export/stl.cpp
     src/export/step.cpp
+    src/import/import.cpp
     src/noise/noise.cpp
     src/terrain/terrain.cpp
     src/primitives3d/sphere.cpp

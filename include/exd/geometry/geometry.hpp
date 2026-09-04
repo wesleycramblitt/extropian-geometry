@@ -46,6 +46,9 @@
 // ── Constraint export (MJCF / URDF) ──
 #include <exd/geometry/export.hpp>
 
+// ── Import (tessellated CAD formats → CADModel) ──
+#include <exd/geometry/import.hpp>
+
 // ── Noise / procedural terrain ──
 #include <exd/geometry/noise.hpp>
 #include <exd/geometry/terrain.hpp>

@@ -259,15 +259,19 @@ All adapters are deterministic writers; same model → byte-identical output.
 
 ## 6. Import (planned, Phase C/D)
 
-| Class | Formats | Owner |
-|---|---|---|
-| Tessellated / lightweight | STL, OBJ, PLY, Gmsh MSH (later glTF, 3MF) | **in-repo, pure C++, WASM-clean** |
-| Analytic / BREP | STEP, IGES, BREP | **extropian-cad (OCCT)** only — never hand-rolled BREP parsers |
+| Class | Formats | Owner | Status |
+|---|---|---|---|
+| Tessellated / lightweight | STL, OBJ, Gmsh MSH (PLY, glTF, 3MF later) | **in-repo, pure C++, WASM-clean** | ✅ Phase C |
+| Analytic / BREP | STEP, IGES, BREP | **extropian-cad (OCCT)** only — never hand-rolled BREP parsers | 🔜 extropian-cad |
 
-Importers produce `CADModel`. STL is soup (weld + infer topology); OBJ/glTF
-carry groups and materials that map onto patches/materials; STEP/IGES enter
-via the kernel module, optionally carrying the analytic B-Rep on the model
-next to the tessellation.
+Importers produce `CADModel`.
+- `parse_stl` auto-detects ascii/binary (multi-solid binary supported);
+  triangle soup, no welding.
+- `parse_obj` keeps indexed topology + optional normals; quads fan-triangulated.
+- `import_msh` maps PhysicalSurfaces → Patches 1:1 ("part.patch"), elementary
+  regions → Parts, and round-trips `to_msh` exactly.
+- STEP/IGES enter via the kernel module, optionally carrying the analytic
+  B-Rep on the model next to the tessellation.
 
 ## 7. Validation (D16)
 
