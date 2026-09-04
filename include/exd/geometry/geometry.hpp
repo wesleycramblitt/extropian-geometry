@@ -49,9 +49,6 @@
 // ── Import (tessellated CAD formats → CADModel) ──
 #include <exd/geometry/import.hpp>
 
-// ── Analytic BREP import/export (OCCT-gated, optional) ──
-#include <exd/geometry/import_brep.hpp>
-
 // ── Noise / procedural terrain ──
 #include <exd/geometry/noise.hpp>
 #include <exd/geometry/terrain.hpp>

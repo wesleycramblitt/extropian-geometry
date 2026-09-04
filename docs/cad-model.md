@@ -48,26 +48,21 @@ triangles.
                     │  parts·patches·materials·regions·domains     │
                     │  interfaces·bcs·body_loads·symmetry·frames   │
                     │  mechanism·units                              │
-                    └───────┬──────────────┬───────────────┬───────┘
-                            │              │               │
-              adapters      │              │   OCCT module │
-              OBJ/STL/MSH/  │              │   (in-repo,   │
-              VTK/MJCF/URDF │  importers   │   optional)    │
-              + faceted STEP│  STL/OBJ/MSH │ STEP/IGES/BREP │
-              │              │  (self)      │ analytic: import_brep /
-              │              │  builds      │ export_brep_step
-              │              │  CADModel    │
-              └──────────────┴──────────────┴───────────────┘
+                    └──────────┬─────────────────────┬─────────────┘
+                               │                     │
+                   adapters    │                     │  importers (in-repo)
+                   OBJ/STL/    │                     │  STL · OBJ · Gmsh MSH
+                   MSH/VTK/VTU │                     │  (pure C++, WASM-clean)
+                   + faceted   │                     │
+                   STEP        │                     │
+                               └─────────────────────┘
 ```
 
-- geometry (<- this repo) owns the IR, the pure adapters, and the light
-  importers. Wasm-clean, no heavy dependencies.
-- The in-repo **OCCT module** (`src/import_brep/`, `import_brep`,
-  `export_brep_step`, gated by `EXD_GEOMETRY_ENABLE_OCCT`) handles analytic
-  BREP: STEP/IGES/BREP import and analytic STEP export. It consumes and
-  produces the same `CADModel`; the analytic B-Rep can be stashed on the model
-  next to the tessellation. Optional, desktop-only; a stub backend keeps the
-  default (WASM-clean) build compiling without OCCT.
+- geometry (<- this repo) owns the IR, the adapters, and the mesh importers
+  (STL/OBJ/Gmsh). Wasm-clean, no heavy dependencies.
+- **Analytic BREP (STEP/IGES/BREP) is out of scope here.** The library is a
+  mesh import/export library; analytic CAD formats need an external CAD
+  kernel (e.g. OpenCASCADE) and are deliberately not wired in (D17/D18).
 - **The model declares physics; adapters/solvers configure.** We do not model
   solver configuration (element order, tolerances, timestep), result fields
   (VTU covers output), or material-property solve engines.
@@ -253,9 +248,9 @@ CADModel make_cad_model(std::string name, std::span<const Part> parts,
 | `to_stl` | tessellation | ascii + binary; binary is the CAE default; per-solid header per part | ✅ Phase B |
 | `to_msh` (Gmsh) | surface mesh | **PhysicalSurfaces = patches** 1:1; unpatched faces → part-level group; region volume groups deferred (no volume mesh) | ✅ Phase B |
 | `to_vtk` / `to_vtu` | mesh + region data | CellData = PartID (0-based) + PatchID (1-based global enum) | ✅ Phase B |
-| `to_step_faceted` | CAD | faceted solid B-rep (AP203/214) per watertight part — deterministic, imports anywhere; AP242 tessellated entities deferred to the OCCT gate (D17) | ✅ Phase B |
+| `to_step_faceted` | CAD | faceted solid B-rep (AP203/214) per watertight part — deterministic, imports anywhere; analytic BREP is deferred (D17) | ✅ Phase B |
 | `to_mjcf` / `to_urdf` | physics | mechanism slice; contact = `meta.contact` parts; density from material resolution | ✅ (existing) |
-| `export_brep_step` (in-repo OCCT) | CAD | analytic STEP via sewn solids (watertight parts) | ✅ optional module |
+| analytic STEP (via external CAD kernel) | CAD | deferred — not owned here | 🔜 future |
 
 All adapters are deterministic writers; same model → byte-identical output.
 
@@ -264,7 +259,7 @@ All adapters are deterministic writers; same model → byte-identical output.
 | Class | Formats | Owner | Status |
 |---|---|---|---|
 | Tessellated / lightweight | STL, OBJ, Gmsh MSH (PLY, glTF, 3MF later) | **in-repo, pure C++, WASM-clean** | ✅ Phase C |
-| Analytic / BREP | STEP, IGES, BREP | **in-repo OCCT module** (`import_brep` / `export_brep_step`), gated by `-DEXD_GEOMETRY_ENABLE_OCCT=ON`; never hand-rolled BREP parsers | ✅ optional module (`src/import_brep/`) |
+| Analytic / BREP | STEP, IGES, BREP | **not owned here** — requires an external kernel; deferred | 🔜 future |
 
 Importers produce `CADModel`.
 - `parse_stl` auto-detects ascii/binary (multi-solid binary supported);
@@ -272,8 +267,8 @@ Importers produce `CADModel`.
 - `parse_obj` keeps indexed topology + optional normals; quads fan-triangulated.
 - `import_msh` maps PhysicalSurfaces → Patches 1:1 ("part.patch"), elementary
   regions → Parts, and round-trips `to_msh` exactly.
-- STEP/IGES enter via the kernel module, optionally carrying the analytic
-  B-Rep on the model next to the tessellation.
+- STEP/IGES/BREP (analytic) are deferred — importing them would require an
+  external CAD kernel, which is outside this mesh library's scope.
 
 ## 7. Validation (D16)
 
@@ -293,9 +288,9 @@ existing watertight machinery where applicable; per-mesh checks are Phase C.
 | Phase | Theme | Work | Milestone |
 |---|---|---|---|
 | **A** | **CADModel IR** | `cad_model.hpp` + `MaterialDB` + patch semantics + `validate` + `make_cad_model` | gearbox model: parts+patches+materials+mechanism validate true; multiphysics sample (solid+fluid region, FSI interface) validates |
-| B | CAE adapters | STL, Gmsh MSH, VTK/VTU, tessellated STEP AP242 | round-trip: MSH self parse; STEP gated OCCT load |
+| B | CAE adapters | STL, Gmsh MSH, VTK/VTU, tessellated (faceted) STEP export | round-trip: MSH self parse; STEP structural self-check |
 | C | Import (light) | STL/OBJ/PLY/MSH importers → CADModel | file → CADModel → render |
-| D | Analytic BREP module | in-repo OCCT (`import_brep`, `export_brep_step`) under `EXD_GEOMETRY_ENABLE_OCCT`; stub without OCCT | STEP (analytic) round-trip via OCCT (gated test) |
+| D | Analytic BREP | deferred — external CAD kernel would be required; never in-repo | — |
 | E | Optional solver decks | OpenFOAM skeleton, Abaqus `.inp`, Nastran `.bdf` | on demand |
 
 ## 9. Documented decisions
@@ -313,11 +308,11 @@ existing watertight machinery where applicable; per-mesh checks are Phase C.
   interfaces; BCs/loads are physics-tagged. Model declares; solvers configure.
 - **D16 — CAE validation is first-class** with actionable, deterministic
   diagnostic strings.
-- **D17 — Tessellated STEP AP242 first; analytic BREP via the in-repo OCCT
-  module** (`import_brep`, `export_brep_step`), gated by
-  `EXD_GEOMETRY_ENABLE_OCCT` — never a hand-rolled BREP parser.
-- **D18 — Import split.** Tessellated formats in-repo; analytic BREP only via
-  the in-repo OCCT module (stub backend when OCCT is absent, WASM-clean).
+- **D17 — Tessellated STEP first** (faceted solid B-rep, shipped); analytic
+  BREP deferred — an external CAD kernel (e.g. OCCT) would be required if
+  ever pursued. Never a hand-rolled BREP parser.
+- **D18 — Import split.** Tessellated formats in-repo (shipped); analytic
+  BREP deferred (external kernel would be required).
 - **D19 — Symmetry/cyclic/rotating-frame metadata is first-class** for the
   turbomachinery recipes.
 
