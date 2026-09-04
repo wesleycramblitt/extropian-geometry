@@ -105,6 +105,19 @@ target_link_libraries(exd-geometry PUBLIC
     exd::core
 )
 
+# ── Analytic BREP via OpenCASCADE (optional; stub otherwise) ──
+option(EXD_GEOMETRY_ENABLE_OCCT "Enable analytic BREP import/export via OpenCASCADE (adds OCCT dependency)" OFF)
+if(EXD_GEOMETRY_ENABLE_OCCT)
+    find_package(OpenCASCADE REQUIRED)
+    target_sources(exd-geometry PRIVATE src/import_brep/brep_occt.cpp)
+    target_compile_definitions(exd-geometry PUBLIC EXD_GEOMETRY_HAS_OCCT=1)
+    target_include_directories(exd-geometry PUBLIC ${OpenCASCADE_INCLUDE_DIR})
+    target_link_libraries(exd-geometry PUBLIC ${OpenCASCADE_LIBRARIES})
+else()
+    target_sources(exd-geometry PRIVATE src/import_brep/brep_stub.cpp)
+    target_compile_definitions(exd-geometry PUBLIC EXD_GEOMETRY_HAS_OCCT=0)
+endif()
+
 # ── Text support ──
 if(ENABLE_TEXT)
     target_sources(exd-geometry PRIVATE
