@@ -15,6 +15,7 @@ add_executable(test_export           unit/export_test.cpp)
 add_executable(test_cad_model         unit/cad_model_test.cpp)
 add_executable(test_cae_export         unit/export_cae_test.cpp)
 add_executable(test_import            unit/import_test.cpp)
+add_executable(test_pipeline          unit/pipeline_test.cpp)
 add_executable(test_steam_engine    unit/steam_engine_test.cpp)
 
 set(TEST_TARGETS
@@ -35,6 +36,7 @@ set(TEST_TARGETS
     test_cad_model
     test_cae_export
     test_import
+    test_pipeline
 )
 
 foreach(target ${TEST_TARGETS})
