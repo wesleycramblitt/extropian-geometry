@@ -12,6 +12,7 @@ add_executable(test_loft            unit/loft_test.cpp)
 add_executable(test_compressor      unit/compressor_test.cpp)
 add_executable(test_mechanism        unit/mechanism_test.cpp)
 add_executable(test_export           unit/export_test.cpp)
+add_executable(test_cad_model         unit/cad_model_test.cpp)
 add_executable(test_steam_engine    unit/steam_engine_test.cpp)
 
 set(TEST_TARGETS
@@ -29,6 +30,7 @@ set(TEST_TARGETS
     test_mechanism
     test_export
     test_steam_engine
+    test_cad_model
 )
 
 foreach(target ${TEST_TARGETS})

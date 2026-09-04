@@ -16,10 +16,31 @@ namespace exd::geometry {
 /// Explicit ordinals rather than ranges: mesh operations remap indices, and
 /// explicit lists survive remapping by construction. Generators that emit
 /// contiguous runs document the layout and often build via make_patch_range.
+/// CAE role of a face set (Phase A, CADModel). Additive semantics on top of
+/// the legacy construction-relative patch names ("wall", "cap_start", "+x"…).
+/// `Unspecified` keeps legacy patches valid (no declared role).
+enum class PatchSemantic
+{
+    Unspecified,   // no declared role
+    Wall,          // solid boundary
+    Inlet,
+    Outlet,
+    Symmetry,
+    Fixed,         // structural fixture
+    Sliding,
+    Interface,     // coupling between domains (see CADModel::interfaces)
+    Free           // unconstrained/open (e.g. far-field)
+};
+
 struct Patch
 {
     std::string name;
     std::vector<uint32_t> faces;
+    // CAE/multiphysics additions (Phase A, CADModel). Defaulted so every
+    // legacy initializer and make_patch_range() stays source-compatible.
+    PatchSemantic semantic   = PatchSemantic::Unspecified;
+    float         mesh_size  = 0.0f;   // target cell/edge size hint [m]; 0 = solver default
+    std::string   material;            // per-patch material override; empty = part's material
 };
 
 /// Coarse motion class for a part (scene layer animation + sim export hints).

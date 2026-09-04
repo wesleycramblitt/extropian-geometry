@@ -1,6 +1,7 @@
 # Motion Graph & Simulation Export — Design Notes
 
-> **2026-08.** Companion to `plan.md` (kernel) and `recipes.md` (recipes). This
+> **2026-08.** Companion to `plan.md` (kernel), `recipes.md` (recipes), and
+> `cad-model.md` (unified `CADModel` IR). This
 > is the design record for the connectivity layer: how machines declare their
 > joints/couplings, how frames are kept consistent end-to-end, and how the
 > same descriptor feeds both the renderer and physics simulators.

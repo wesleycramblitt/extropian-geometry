@@ -40,6 +40,9 @@
 // ── Motion graph (connectivity core) ──
 #include <exd/geometry/mechanism.hpp>
 
+// ── Unified model IR (CADModel) ──
+#include <exd/geometry/cad_model.hpp>
+
 // ── Constraint export (MJCF / URDF) ──
 #include <exd/geometry/export.hpp>
 
