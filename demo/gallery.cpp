@@ -11,8 +11,9 @@
 ///     4  extrusion               9  compressor       14 gizmos
 ///
 ///  Navigation: orbit camera (left-drag orbit, middle-drag pan, scroll
-///  zoom), Esc quits, Tab toggles UI/free-fly input. Sliders drive the
-///  animated tabs (blend radius, crank angle, gear ratio).
+///  zoom), Esc quits, Tab/Shift+Tab cycle the demos, Z toggles the
+///  Orbit <-> FPS (free-fly) camera. Sliders drive the animated tabs
+///  (blend radius, crank angle, gear ratio).
 ///
 ///  Build: ./demo.sh (or cmake -DBUILD_DEMO=ON ...).
 /// ═══════════════════════════════════════════════════════════════════════
@@ -63,13 +64,68 @@ struct Gallery
     bool  build_now   = true;      // rebuild scene (tab change / slider)
     std::string info;
 
-    std::vector<uint32_t> meshes;    // GPU mesh handles owned by the gallery
-    std::vector<uint32_t> entities;  // ECS entities owned by the gallery
+    std::vector<uint32_t> meshes;      // GPU mesh handles owned by the gallery
+    std::vector<ecs::Entity> entities;  // ECS entities owned by the gallery
 
-    // animated tab state
-    int   steam_angle  = 0;
-    float mech_state   = 0.0f;
+    // ── live-editable parameters (defaults match the original scenes) ──
+    // tab 0 · 2D primitives
+    float circle_radius = 0.75f;
+    float ring_inner    = 0.45f;
+    int   star_points   = 5;
+    // tab 1 · 3D primitives
+    float sphere_radius   = 0.8f;
+    float box_size        = 1.3f;
+    float capsule_radius  = 0.42f;
+    float capsule_height  = 0.9f;
+    float torus_major     = 0.8f;
+    float torus_minor     = 0.3f;
+    // tab 2 · paths & splines
+    float spline_amp  = 1.0f;     // y-amplitude multiplier on spline controls
+    float tube_radius = 0.09f;
+    // tab 3 · loft
+    int   loft_sides = 24;
+    float loft_scale = 1.0f;
+    // tab 4 · extrusion / helix
+    int   xtrude_star_pts = 5;
+    float xtrude_depth    = 2.2f;
+    float helix_turns     = 4.0f;
+    // tab 5 · SDF blend
     float blend_radius = 0.20f;
+    float blend_cell   = 0.035f;
+    float blend_sph_r  = 0.55f;   // radius of the union spheres
+    // tab 6 · workspace ops
+    float ws_box  = 2.1f;         // x-extent of the housing box
+    float ws_bore = 0.34f;        // bore radius
+    // tab 7 · terrain / heightmap
+    int   terrain_seed   = 7;
+    float terrain_height = 3.6f;
+    int   hm_octaves     = 4;
+    // tab 8 · deformation
+    float bend_angle   = 1.15f;
+    float twist_angle  = 2.6f;
+    float taper_end    = 0.3f;
+    float deform_noise = 0.06f;
+    // tab 9 · compressor
+    int igv_blades    = 16;
+    int rotor_blades  = 12;
+    int stator_blades = 14;
+    // tab 10 · turbine
+    int   turb_stator = 16;
+    int   turb_rotor  = 18;
+    float rotor_rpm   = 3000.0f;
+    // tab 11 · steam engine
+    int   steam_angle  = 0;
+    float crank_r      = 0.10f;
+    float conrod_l     = 0.45f;
+    float piston_rod_l = 1.10f;
+    // tab 12 · mechanisms
+    float mech_state = 0.0f;
+    float gear_ratio = -0.7f;
+    // tab 13 · import / export
+    float ie_box      = 1.8f;
+    float ie_rotor_len = 2.2f;
+    // tab 14 · gizmos
+    float gizmo_scale = 1.0f;
 
     long frame = 0;
     int  last_printed_tab = -1;   // headless verification support
@@ -188,7 +244,7 @@ static void build_tab(Gallery& g, ecs::Registry& reg, render::GraphicsContext& c
         reg.emplace<render::RenderableComponent>(e, h);
         reg.emplace<render::RenderTechnique_Lambertian>(e);
         reg.emplace<render::Material>(e, tint);
-        g.entities.push_back(e.id);
+        g.entities.push_back(e);       // keep id + generation (ids are recycled)
         return e.id;
     };
     auto show_mesh = [&](const MeshData& m, math::Vec3f pos, math::Quat tint,
@@ -206,14 +262,14 @@ static void build_tab(Gallery& g, ecs::Registry& reg, render::GraphicsContext& c
     {
         show_mesh_vc(generate_rect_mesh(RectangleGeometry{{1.6f, 1.0f, 0}, col(0.90f, 0.35f, 0.35f)}), {-3.1f, 2.2f, 0});
         show_mesh_vc(generate_rounded_rect_mesh(RoundedRectangleGeometry{{1.6f, 1.0f, 0}, {0.3f, 0.3f, 0.3f, 0.3f}, 32, col(0.95f, 0.60f, 0.25f)}), {-1.05f, 2.2f, 0});
-        show_mesh_vc(generate_circle_mesh(CircleGeometry{0.75f, 64, col(0.55f, 0.75f, 0.95f)}), {1.05f, 2.2f, 0});
+        show_mesh_vc(generate_circle_mesh(CircleGeometry{g.circle_radius, 64, col(0.55f, 0.75f, 0.95f)}), {1.05f, 2.2f, 0});
         show_mesh_vc(generate_ellipse_mesh(EllipseGeometry{0.85f, 0.45f, 64, col(0.70f, 0.45f, 0.90f)}), {3.1f, 2.2f, 0});
         show_mesh_vc(generate_arc_mesh(ArcGeometry{0.7f, 0.0f, 4.71f, 64, col(0.40f, 0.85f, 0.70f)}), {-3.1f, 0.0f, 0});
-        show_mesh_vc(generate_ring_mesh(RingGeometry{0.85f, 0.45f, 64, col(0.95f, 0.80f, 0.35f)}), {-1.05f, 0.0f, 0});
+        show_mesh_vc(generate_ring_mesh(RingGeometry{0.85f, g.ring_inner, 64, col(0.95f, 0.80f, 0.35f)}), {-1.05f, 0.0f, 0});
         show_mesh_vc(generate_line_mesh(LineGeometry{{-0.7f, -0.4f, 0}, {0.7f, 0.4f, 0}, 0.06f, col(0.45f, 0.70f, 0.60f)}), {1.05f, 0.0f, 0});
         show_mesh_vc(generate_polyline_mesh(PolylineGeometry{{{-2.0f, -0.4f, 0}, {-1.0f, 0.5f, 0}, {0.0f, -0.2f, 0}, {1.0f, 0.4f, 0}, {2.0f, -0.3f, 0}}, 0.05f, false, col(0.35f, 0.60f, 0.95f)}), {3.1f, 0.0f, 0});
         show_mesh_vc(generate_arrow_mesh(ArrowGeometry{{0, 0, 0}, {1.4f, 0, 0}, 0.35f, 0.18f, 0.05f, col(0.95f, 0.40f, 0.55f)}), {-2.15f, -2.2f, 0});
-        show_mesh_vc(generate_star_mesh(StarGeometry{0.8f, 0.3f, 5, col(0.95f, 0.75f, 0.30f)}), {-0.35f, -2.2f, 0});
+        show_mesh_vc(generate_star_mesh(StarGeometry{0.8f, 0.3f, static_cast<uint32_t>(g.star_points), col(0.95f, 0.75f, 0.30f)}), {-0.35f, -2.2f, 0});
         show_mesh_vc(generate_regular_polygon_mesh(RegularPolygonGeometry{0.7f, 6, col(0.55f, 0.80f, 0.50f)}), {1.45f, -2.2f, 0});
         show_mesh_vc(generate_grid_mesh(GridGeometry{{1.6f, 1.1f, 0}, 9, 9, 0.015f, col(0.75f, 0.55f, 0.90f)}), {3.15f, -2.2f, 0});
     }
@@ -225,12 +281,12 @@ static void build_tab(Gallery& g, ecs::Registry& reg, render::GraphicsContext& c
                 cells.push_back({-4.4f + ix * 2.2f, 1.2f, -1.0f + iy * 2.2f});
         int i = 0;
         auto at = [&]() { return cells[std::min(i, static_cast<int>(cells.size()) - 1)]; };
-        show_mesh(generate_sphere_mesh(SphereGeometry{0.8f, 24, 48}), at(), col(0.95f, 0.40f, 0.40f)); ++i;
-        show_mesh(generate_box_mesh(BoxGeometry{{1.3f, 1.3f, 1.3f}}), at(), col(0.95f, 0.65f, 0.30f)); ++i;
+        show_mesh(generate_sphere_mesh(SphereGeometry{g.sphere_radius, 24, 48}), at(), col(0.95f, 0.40f, 0.40f)); ++i;
+        show_mesh(generate_box_mesh(BoxGeometry{{g.box_size, g.box_size, g.box_size}}), at(), col(0.95f, 0.65f, 0.30f)); ++i;
         show_mesh(generate_cylinder_mesh(CylinderGeometry{0.65f, 1.5f, 48}), at(), col(0.45f, 0.75f, 0.95f)); ++i;
         show_mesh(generate_cone_mesh(ConeGeometry{0.7f, 1.6f, 48}), at(), col(0.65f, 0.85f, 0.45f)); ++i;
-        show_mesh(generate_capsule_mesh(CapsuleGeometry{0.42f, 0.9f, 48, 12}), at(), col(0.90f, 0.50f, 0.85f)); ++i;
-        show_mesh(generate_torus_mesh(TorusGeometry{0.8f, 0.3f, 64, 24}), at(), col(0.40f, 0.80f, 0.80f)); ++i;
+        show_mesh(generate_capsule_mesh(CapsuleGeometry{g.capsule_radius, g.capsule_height, 48, 12}), at(), col(0.90f, 0.50f, 0.85f)); ++i;
+        show_mesh(generate_torus_mesh(TorusGeometry{g.torus_major, g.torus_minor, 64, 24}), at(), col(0.40f, 0.80f, 0.80f)); ++i;
         show_mesh(generate_disk_mesh(DiskGeometry{0.9f, 0.0f, 64}), at(), col(0.95f, 0.85f, 0.40f)); ++i;
         show_mesh(generate_ellipsoid_mesh(EllipsoidGeometry{{0.55f, 0.9f, 0.55f}, 24, 48}), at(), col(0.55f, 0.55f, 0.95f)); ++i;
         show_mesh(generate_icosahedron_mesh(0.8f, 1), at(), col(0.75f, 0.45f, 0.35f)); ++i;
@@ -262,9 +318,11 @@ static void build_tab(Gallery& g, ecs::Registry& reg, render::GraphicsContext& c
         star.close();
         show_mesh_vc(star.tessellateStroke(StrokeStyle{0.06f, LineJoin::Miter, LineCap::Round}, 0.05f), {1.6f, 3.0f, 0});
 
-        // spline → tube sweep
+        // spline → tube sweep (y controls scaled by spline_amp)
         MonotoneCubicSpline spl({0, 1, 2, 3, 4, 5, 6},
-                                {0.0f, 0.9f, 0.25f, 1.2f, -0.1f, 0.8f, 0.0f});
+                                {0.0f, 0.9f * g.spline_amp, 0.25f * g.spline_amp,
+                                 1.2f * g.spline_amp, -0.1f * g.spline_amp,
+                                 0.8f * g.spline_amp, 0.0f});
         std::vector<math::Vec3f> path;
         constexpr int kSamples = 48;
         for (int k = 0; k < kSamples; ++k)
@@ -272,23 +330,26 @@ static void build_tab(Gallery& g, ecs::Registry& reg, render::GraphicsContext& c
             const float x = 6.0f * static_cast<float>(k) / static_cast<float>(kSamples - 1);
             path.push_back({x, spl.evaluate(x), 0});
         }
-        show_mesh(generate_tube_mesh(TubeGeometry{path, 0.09f, 24, true}),
+        show_mesh(generate_tube_mesh(TubeGeometry{path, g.tube_radius, 24, true}),
                   {-2.0f, 0.0f, 0.6f}, col(0.30f, 0.70f, 0.90f));
     }
     else if (g.current_tab == 3)   // ── loft ──────────────────────────
     {
         std::vector<std::vector<math::Vec3f>> sections;
-        sections.push_back(ring_circle(0.9f, 0.0f, 24));
-        sections.push_back(ring_star(0.55f, 0.75f, 1.2f, 12));
-        sections.push_back(ring_circle(1.0f, 2.4f, 24, 0.3f));
-        sections.push_back(ring_circle(0.45f, 3.6f, 24, 0.9f));
+        const int lazy_pts = std::max(4, g.loft_sides);
+        const int star_pts = std::max(3, g.loft_sides / 2);
+        sections.push_back(ring_circle(0.9f, 0.0f, static_cast<uint32_t>(lazy_pts)));
+        sections.push_back(ring_star(0.55f, 0.75f, 1.2f, static_cast<uint32_t>(star_pts)));
+        sections.push_back(ring_circle(1.0f, 2.4f, static_cast<uint32_t>(lazy_pts), 0.3f));
+        sections.push_back(ring_circle(0.45f, 3.6f, static_cast<uint32_t>(lazy_pts), 0.9f));
         show_mesh(generate_loft_mesh(LoftGeometry{sections, true, col(0.80f, 0.50f, 0.30f)}),
-                  {0, 0, 0}, math::Quat{1, 1, 1, 1}, {0.8f, 0.8f, 0.8f});
+                  {0, 0, 0}, math::Quat{1, 1, 1, 1},
+                  {g.loft_scale, g.loft_scale, g.loft_scale});
     }
     else if (g.current_tab == 4)   // ── extrusion / lathe / helix ─────
     {
-        std::vector<math::Vec3f> starProfile = ring_star(0.6f, 0.45f, 0, 5);
-        show_mesh(generate_extrusion_mesh(ExtrusionGeometry{starProfile, 2.2f, true, col(0.55f, 0.80f, 0.50f)}),
+        std::vector<math::Vec3f> starProfile = ring_star(0.6f, 0.45f, 0, static_cast<uint32_t>(std::max(3, g.xtrude_star_pts)));
+        show_mesh(generate_extrusion_mesh(ExtrusionGeometry{starProfile, g.xtrude_depth, true, col(0.55f, 0.80f, 0.50f)}),
                   {-2.6f, 1.1f, 0}, math::Quat{1, 1, 1, 1});
 
         std::vector<math::Vec3f> vase = {{0.15f, 0.0f, 0}, {0.45f, 0.0f, 0}, {0.62f, 0.20f, 0},
@@ -297,7 +358,7 @@ static void build_tab(Gallery& g, ecs::Registry& reg, render::GraphicsContext& c
         show_mesh(generate_lathe_mesh(LatheGeometry{vase}), {0.0f, 0.7f, 0}, col(0.85f, 0.55f, 0.40f), {0.5f, 0.8f, 0.5f});
 
         std::vector<math::Vec3f> coilProfile = ring_circle(0.08f, 0, 8);
-        show_mesh(generate_helix_mesh(HelixGeometry{coilProfile, 1.0f, 2.2f, 4.0f, 96}),
+        show_mesh(generate_helix_mesh(HelixGeometry{coilProfile, 1.0f, 2.2f, g.helix_turns, 96}),
                   {2.7f, 1.1f, 0}, col(0.70f, 0.70f, 0.90f));
     }
     else if (g.current_tab == 5)   // ── SDF blend ─────────────────────
@@ -305,11 +366,11 @@ static void build_tab(Gallery& g, ecs::Registry& reg, render::GraphicsContext& c
         BlendGeometry unionBlend;
         unionBlend.op = BlendOp::Union;
         unionBlend.blendRadius = g.blend_radius;
-        unionBlend.cellSize = 0.035f;
+        unionBlend.cellSize = g.blend_cell;
         unionBlend.primitives = {
-            {BlendPrimitiveKind::Sphere, {-0.55f, 0.0f, 0.0f}, {}, {1, 1, 1}, 0.5f, 0.0f, 0.0f, 0.0f, 0},
-            {BlendPrimitiveKind::Sphere, { 0.55f, 0.0f, 0.0f}, {}, {1, 1, 1}, 0.5f, 0.0f, 0.0f, 0.0f, 0},
-            {BlendPrimitiveKind::Sphere, { 0.0f, 0.55f, 0.0f}, {}, {1, 1, 1}, 0.5f, 0.0f, 0.0f, 0.0f, 0},
+            {BlendPrimitiveKind::Sphere, {-0.55f, 0.0f, 0.0f}, {}, {1, 1, 1}, g.blend_sph_r, 0.0f, 0.0f, 0.0f, 0},
+            {BlendPrimitiveKind::Sphere, { 0.55f, 0.0f, 0.0f}, {}, {1, 1, 1}, g.blend_sph_r, 0.0f, 0.0f, 0.0f, 0},
+            {BlendPrimitiveKind::Sphere, { 0.0f, 0.55f, 0.0f}, {}, {1, 1, 1}, g.blend_sph_r, 0.0f, 0.0f, 0.0f, 0},
             {BlendPrimitiveKind::Box,    { 0.0f, 0.0f, 0.5f}, {}, {1, 1, 1}, 0.0f, 0.0f, 0.0f, 0.4f, 0},
         };
         MeshData unionMesh = generate_blend_mesh(unionBlend);
@@ -319,7 +380,7 @@ static void build_tab(Gallery& g, ecs::Registry& reg, render::GraphicsContext& c
         BlendGeometry minusBlend;
         minusBlend.op = BlendOp::Subtract;
         minusBlend.blendRadius = g.blend_radius;
-        minusBlend.cellSize = 0.035f;
+        minusBlend.cellSize = g.blend_cell;
         minusBlend.primitives = {
             {BlendPrimitiveKind::Sphere, {0.0f, 0.0f, 0.0f}, {}, {1, 1, 1}, 0.75f, 0.0f, 0.0f, 0.0f, 0},
             {BlendPrimitiveKind::Capsule, {0.0f, 0.35f, 0.0f}, {}, {1, 1, 1}, 0.35f, 0.0f, 0.9f, 0.0f, 0},
@@ -331,8 +392,8 @@ static void build_tab(Gallery& g, ecs::Registry& reg, render::GraphicsContext& c
     else if (g.current_tab == 6)   // ── workspace ops ─────────────────
     {
         MeshData housing = boolean_mesh(
-            generate_box_mesh(BoxGeometry{{2.1f, 1.5f, 1.5f}, col(0.80f, 0.58f, 0.36f)}),
-            generate_cylinder_mesh(CylinderGeometry{0.34f, 8.0f, 48}),
+            generate_box_mesh(BoxGeometry{{g.ws_box, 1.5f, 1.5f}, col(0.80f, 0.58f, 0.36f)}),
+            generate_cylinder_mesh(CylinderGeometry{g.ws_bore, 8.0f, 48}),
             BooleanOp::Subtract);
         if (!housing.vertices.empty())
             show_mesh(housing, {-1.9f, 0.0f, 0}, math::Quat{1, 1, 1, 1});
@@ -361,13 +422,13 @@ static void build_tab(Gallery& g, ecs::Registry& reg, render::GraphicsContext& c
     {
         TerrainConfig mountains;
         mountains.kind = TerrainKind::Mountains;
-        mountains.seed = 7;
+        mountains.seed = static_cast<uint32_t>(g.terrain_seed);
         mountains.width = 96;
         mountains.height = 96;
-        mountains.size = {14.0f, 3.6f, 14.0f};
+        mountains.size = {14.0f, g.terrain_height, 14.0f};
         show_mesh(generate_terrain_mesh(mountains), {0, 0, 0}, math::Quat{1, 1, 1, 1});
 
-        Noise2D noise(42);
+        Noise2D noise(static_cast<uint32_t>(g.terrain_seed));
         constexpr int kN = 64;
         std::vector<float> data(static_cast<size_t>(kN) * kN);
         for (int y = 0; y < kN; ++y)
@@ -375,7 +436,7 @@ static void build_tab(Gallery& g, ecs::Registry& reg, render::GraphicsContext& c
             {
                 const float u = static_cast<float>(x) / static_cast<float>(kN);
                 const float v = static_cast<float>(y) / static_cast<float>(kN);
-                data[static_cast<size_t>(y) * kN + x] = noise.fbm(u * 3.0f, v * 3.0f, 4) * 0.5f + 0.5f;
+                data[static_cast<size_t>(y) * kN + x] = noise.fbm(u * 3.0f, v * 3.0f, g.hm_octaves) * 0.5f + 0.5f;
             }
         Heightmap hm;
         hm.heightData = std::move(data);
@@ -390,16 +451,16 @@ static void build_tab(Gallery& g, ecs::Registry& reg, render::GraphicsContext& c
         show_mesh(cyl, {-2.6f, 1.1f, 0}, col(0.80f, 0.60f, 0.40f));
 
         DeformDescriptor bend;
-        bend.bend = true; bend.bendAngle = 1.15f; bend.bendRadius = 1.1f; bend.bendAxis = {0, 0, 1};
+        bend.bend = true; bend.bendAngle = g.bend_angle; bend.bendRadius = 1.1f; bend.bendAxis = {0, 0, 1};
         show_mesh(deform_mesh(cyl, bend), {-0.9f, 1.2f, 0}, col(0.45f, 0.75f, 0.90f));
 
         DeformDescriptor twist;
-        twist.twist = true; twist.twistAngle = 2.6f; twist.twistAxis = {0, 1, 0};
+        twist.twist = true; twist.twistAngle = g.twist_angle; twist.twistAxis = {0, 1, 0};
         show_mesh(deform_mesh(cyl, twist), {0.9f, 1.1f, 0}, col(0.70f, 0.55f, 0.90f));
 
         DeformDescriptor taper;
-        taper.taper = true; taper.taperStart = 1.0f; taper.taperEnd = 0.3f; taper.taperAxis = {0, 1, 0};
-        taper.noise = true; taper.noiseAmplitude = 0.06f; taper.noiseFrequency = 8.0f; taper.noiseSeed = 11;
+        taper.taper = true; taper.taperStart = 1.0f; taper.taperEnd = g.taper_end; taper.taperAxis = {0, 1, 0};
+        taper.noise = true; taper.noiseAmplitude = g.deform_noise; taper.noiseFrequency = 8.0f; taper.noiseSeed = 11;
         show_mesh(deform_mesh(cyl, taper), {2.7f, 1.1f, 0}, col(0.60f, 0.85f, 0.50f));
     }
     else if (g.current_tab == 9)   // ── compressor ────────────────────
@@ -411,17 +472,17 @@ static void build_tab(Gallery& g, ecs::Registry& reg, render::GraphicsContext& c
         BladeRow igv; igv.type = BladeRowType::Stator;
         igv.leading_edge_hub = {0.15f, 0.35f};    igv.leading_edge_shroud = {0.15f, 0.63f};
         igv.trailing_edge_hub = {0.45f, 0.35f};   igv.trailing_edge_shroud = {0.45f, 0.63f};
-        igv.blade_count.value = 16;
+        igv.blade_count.value = g.igv_blades;
 
         BladeRow rotor; rotor.type = BladeRowType::Rotor;
         rotor.leading_edge_hub = {0.85f, 0.37f};  rotor.leading_edge_shroud = {0.85f, 0.65f};
         rotor.trailing_edge_hub = {1.25f, 0.38f}; rotor.trailing_edge_shroud = {1.25f, 0.66f};
-        rotor.blade_count.value = 12;
+        rotor.blade_count.value = g.rotor_blades;
 
         BladeRow stator; stator.type = BladeRowType::Stator;
         stator.leading_edge_hub = {1.55f, 0.39f}; stator.leading_edge_shroud = {1.55f, 0.67f};
         stator.trailing_edge_hub = {1.95f, 0.40f}; stator.trailing_edge_shroud = {1.95f, 0.68f};
-        stator.blade_count.value = 14;
+        stator.blade_count.value = g.stator_blades;
 
         CompressorDefinition cd;
         cd.flow_path = fp;
@@ -445,13 +506,13 @@ static void build_tab(Gallery& g, ecs::Registry& reg, render::GraphicsContext& c
         BladeRow st; st.type = BladeRowType::Stator;
         st.leading_edge_hub = {0.30f, 0.40f};   st.leading_edge_shroud = {0.30f, 0.76f};
         st.trailing_edge_hub = {0.75f, 0.42f};  st.trailing_edge_shroud = {0.75f, 0.78f};
-        st.blade_count.value = 16;
+        st.blade_count.value = g.turb_stator;
 
         BladeRow rt; rt.type = BladeRowType::Rotor;
         rt.leading_edge_hub = {1.15f, 0.45f};   rt.leading_edge_shroud = {1.15f, 0.80f};
         rt.trailing_edge_hub = {1.65f, 0.47f};  rt.trailing_edge_shroud = {1.65f, 0.81f};
-        rt.blade_count.value = 18;
-        rt.rotational_speed.value = 3000.0f;
+        rt.blade_count.value = g.turb_rotor;
+        rt.rotational_speed.value = g.rotor_rpm;
 
         td.blade_rows = {st, rt};
         td.revolve_segments = 48;
@@ -463,6 +524,9 @@ static void build_tab(Gallery& g, ecs::Registry& reg, render::GraphicsContext& c
     {
         SteamEngineDefinition def;
         def.crank_angle_deg = static_cast<float>(g.steam_angle);
+        def.crank_radius    = g.crank_r;
+        def.conrod_length   = g.conrod_l;
+        def.piston_rod_length = g.piston_rod_l;
         const SteamEngineResult res = generate_steam_engine(def);
         g.info = "parts: " + std::to_string(res.assembly.parts.size()) +
                  " | joints: " + std::to_string(res.mechanism.joints.size()) +
@@ -486,7 +550,7 @@ static void build_tab(Gallery& g, ecs::Registry& reg, render::GraphicsContext& c
                                {0, 0, 0}, {0, 1, 0}, -1e30f, 1e30f, 10.0f, 20.0f});
         mech.joints.push_back({"j_b", JointKind::Continuous, "", "gear_b",
                                {0.72f, 0, 0}, {0, 1, 0}, -1e30f, 1e30f, 10.0f, 20.0f});
-        mech.couplings.push_back({"g", CouplingKind::Gear, "j_a", "j_b", -0.7f});
+        mech.couplings.push_back({"g", CouplingKind::Gear, "j_a", "j_b", g.gear_ratio});
         mech.driver_joint = "j_a";
 
         const auto poses = evaluate_poses(mech, g.mech_state);
@@ -495,13 +559,14 @@ static void build_tab(Gallery& g, ecs::Registry& reg, render::GraphicsContext& c
             show_mesh(p.mesh, {0, 0, 0},
                       p.name == "gear_a" ? col(0.50f, 0.75f, 0.95f) : col(0.95f, 0.55f, 0.45f));
         g.info = "driving j_a = " + std::to_string(g.mech_state) + " rad -> j_b = " +
-                 std::to_string(-0.7f * g.mech_state) + " rad (ratio -0.7)";
+                 std::to_string(g.gear_ratio * g.mech_state) + " rad (ratio " +
+                 std::to_string(g.gear_ratio) + ")";
     }
     else if (g.current_tab == 13)   // ── import / export ──────────────
     {
-        Part casing = generate_box_part(BoxGeometry{{1.8f, 1.0f, 1.0f}, col(0.85f, 0.55f, 0.30f)});
+        Part casing = generate_box_part(BoxGeometry{{g.ie_box, 1.0f, 1.0f}, col(0.85f, 0.55f, 0.30f)});
         casing.name = "casing";
-        Part rotor = generate_cylinder_part(CylinderGeometry{0.32f, 2.2f, 48, true});
+        Part rotor = generate_cylinder_part(CylinderGeometry{0.32f, g.ie_rotor_len, 48, true});
         rotor.name = "rotor";
         rotor.meta.material = "steel-1045";
         CADModel model = make_cad_model("pump", std::vector<Part>{casing, rotor});
@@ -544,10 +609,10 @@ static void build_tab(Gallery& g, ecs::Registry& reg, render::GraphicsContext& c
             if (!m.vertices.empty())
                 show_mesh(m, pos, math::Quat{1, 1, 1, 1});
         };
-        show_gizmo(generate_translation_gizmo(TranslationGizmoGeometry{1.2f}), {-2.8f, 0, 0});
-        show_gizmo(generate_rotation_gizmo(RotationGizmoGeometry{1.0f}),        {0.0f, 0, 0});
-        show_gizmo(generate_scale_gizmo(ScaleGizmoGeometry{1.2f}),             {2.8f, 0, 0});
-        show_gizmo(generate_lattice_gizmo(LatticeCageGeometry{{3, 3, 3}, {1.2f, 1.2f, 1.2f}}), {5.6f, 0.6f, 0});
+        show_gizmo(generate_translation_gizmo(TranslationGizmoGeometry{1.2f * g.gizmo_scale}), {-2.8f, 0, 0});
+        show_gizmo(generate_rotation_gizmo(RotationGizmoGeometry{1.0f * g.gizmo_scale}),        {0.0f, 0, 0});
+        show_gizmo(generate_scale_gizmo(ScaleGizmoGeometry{1.2f * g.gizmo_scale}),             {2.8f, 0, 0});
+        show_gizmo(generate_lattice_gizmo(LatticeCageGeometry{{3, 3, 3}, {1.2f * g.gizmo_scale, 1.2f * g.gizmo_scale, 1.2f * g.gizmo_scale}}), {5.6f, 0.6f, 0});
     }
 }
 
@@ -561,9 +626,12 @@ static void clear_scene(Gallery& g, ecs::Registry& reg, render::GraphicsContext&
         if (h != 0)
             ctx.mesh_manager.destroy(h);
     g.meshes.clear();
-    for (uint32_t e : g.entities)
-        if (reg.valid(ecs::Entity{e}))
-            reg.destroy(ecs::Entity{e});
+    // Store the full Entity (id + generation): recycled ids are only valid
+    // with the generation they were created with, otherwise destroy() no-ops
+    // and stale renderables keep referencing destroyed mesh handles.
+    for (ecs::Entity e : g.entities)
+        if (reg.valid(e))
+            reg.destroy(e);
     g.entities.clear();
     g.info.clear();
 }
@@ -581,10 +649,11 @@ static void frame_camera(Gallery& g, ecs::Registry& reg, const TabDef& t)
 static void print_help()
 {
     std::printf("\n=== extropian-geometry gallery — controls ===\n");
-    std::printf("  Esc     quit\n");
-    std::printf("  Tab     toggle UI / FPS input mode\n");
-    std::printf("  Orbit:  left-drag orbit · middle-drag pan · scroll zoom\n");
-    std::printf("  FPS:    WASD/QE fly, mouse look\n\n");
+    std::printf("  Esc          quit\n");
+    std::printf("  Tab          next demo · Shift+Tab previous\n");
+    std::printf("  Z            toggle Orbit <-> FPS camera\n");
+    std::printf("  Orbit:       left-drag orbit · middle-drag pan · scroll zoom\n");
+    std::printf("  FPS:         WASD/QE fly, mouse look\n\n");
 }
 
 // Optional argv: <start_tab> [max_frames] — used by automated tab sweeps
@@ -687,21 +756,83 @@ int main(int argc, char** argv)
                 ImGui::EndTabBar();
             }
 
-            // animated tab controls
-            if (g.current_tab == 5)   // SDF blend
+            // ── live-editable parameters (any change rebuilds the scene) ──
+            ImGui::SeparatorText("Parameters");
+            switch (g.current_tab)
             {
-                if (ImGui::SliderFloat("blend radius", &g.blend_radius, 0.0f, 0.5f, "%.2f"))
-                    g.build_now = true;
-            }
-            else if (g.current_tab == 11)   // steam engine
-            {
-                if (ImGui::SliderInt("crank angle (deg)", &g.steam_angle, 0, 360))
-                    g.build_now = true;
-            }
-            else if (g.current_tab == 12)   // mechanisms
-            {
-                if (ImGui::SliderFloat("drive angle (rad)", &g.mech_state, 0.0f, 6.2831853f))
-                    g.build_now = true;
+            case 0:   // 2D primitives
+                if (ImGui::SliderFloat("circle radius", &g.circle_radius, 0.3f, 1.4f, "%.2f"))   g.build_now = true;
+                if (ImGui::SliderFloat("ring inner radius", &g.ring_inner, 0.15f, 0.8f, "%.2f")) g.build_now = true;
+                if (ImGui::SliderInt("star points", &g.star_points, 3, 12))                     g.build_now = true;
+                break;
+            case 1:   // 3D primitives
+                if (ImGui::SliderFloat("sphere radius", &g.sphere_radius, 0.4f, 1.4f, "%.2f"))  g.build_now = true;
+                if (ImGui::SliderFloat("box size", &g.box_size, 0.8f, 2.0f, "%.2f"))            g.build_now = true;
+                if (ImGui::SliderFloat("capsule radius", &g.capsule_radius, 0.2f, 0.8f, "%.2f"))g.build_now = true;
+                if (ImGui::SliderFloat("capsule height", &g.capsule_height, 0.4f, 1.6f, "%.2f"))g.build_now = true;
+                if (ImGui::SliderFloat("torus major radius", &g.torus_major, 0.4f, 1.4f, "%.2f"))g.build_now = true;
+                if (ImGui::SliderFloat("torus minor radius", &g.torus_minor, 0.1f, 0.6f, "%.2f"))g.build_now = true;
+                break;
+            case 2:   // paths & splines
+                if (ImGui::SliderFloat("spline amplitude", &g.spline_amp, 0.0f, 2.5f, "%.2f")) g.build_now = true;
+                if (ImGui::SliderFloat("tube radius", &g.tube_radius, 0.03f, 0.3f, "%.3f"))     g.build_now = true;
+                break;
+            case 3:   // loft
+                if (ImGui::SliderInt("ring sides", &g.loft_sides, 8, 48))                 g.build_now = true;
+                if (ImGui::SliderFloat("loft scale", &g.loft_scale, 0.4f, 1.6f, "%.2f"))  g.build_now = true;
+                break;
+            case 4:   // extrusion / helix
+                if (ImGui::SliderInt("star profile points", &g.xtrude_star_pts, 3, 12))      g.build_now = true;
+                if (ImGui::SliderFloat("extrusion depth", &g.xtrude_depth, 0.5f, 4.0f, "%.2f")) g.build_now = true;
+                if (ImGui::SliderFloat("helix turns", &g.helix_turns, 1.0f, 10.0f, "%.1f"))   g.build_now = true;
+                break;
+            case 5:   // SDF blend
+                if (ImGui::SliderFloat("blend radius", &g.blend_radius, 0.0f, 0.5f, "%.2f")) g.build_now = true;
+                if (ImGui::SliderFloat("voxel cell size", &g.blend_cell, 0.02f, 0.09f, "%.3f")) g.build_now = true;
+                if (ImGui::SliderFloat("union sphere radius", &g.blend_sph_r, 0.3f, 0.9f, "%.2f")) g.build_now = true;
+                break;
+            case 6:   // workspace ops
+                if (ImGui::SliderFloat("housing x-extent", &g.ws_box, 1.2f, 3.0f, "%.2f")) g.build_now = true;
+                if (ImGui::SliderFloat("bore radius", &g.ws_bore, 0.12f, 0.7f, "%.2f"))    g.build_now = true;
+                break;
+            case 7:   // terrain
+                if (ImGui::SliderInt("seed", &g.terrain_seed, 0, 999))                     g.build_now = true;
+                if (ImGui::SliderFloat("height scale", &g.terrain_height, 0.5f, 8.0f, "%.2f")) g.build_now = true;
+                if (ImGui::SliderInt("heightmap octaves", &g.hm_octaves, 1, 8))            g.build_now = true;
+                break;
+            case 8:   // deformation
+                if (ImGui::SliderFloat("bend angle (rad)", &g.bend_angle, 0.0f, 3.14f, "%.2f"))   g.build_now = true;
+                if (ImGui::SliderFloat("twist angle (rad)", &g.twist_angle, 0.0f, 6.28f, "%.2f"))  g.build_now = true;
+                if (ImGui::SliderFloat("taper end", &g.taper_end, 0.1f, 1.0f, "%.2f"))            g.build_now = true;
+                if (ImGui::SliderFloat("noise amplitude", &g.deform_noise, 0.0f, 0.25f, "%.3f"))  g.build_now = true;
+                break;
+            case 9:   // compressor
+                if (ImGui::SliderInt("IGV blades", &g.igv_blades, 8, 40))      g.build_now = true;
+                if (ImGui::SliderInt("rotor blades", &g.rotor_blades, 8, 40))  g.build_now = true;
+                if (ImGui::SliderInt("stator blades", &g.stator_blades, 8, 40)) g.build_now = true;
+                break;
+            case 10:  // turbine
+                if (ImGui::SliderInt("stator blades", &g.turb_stator, 8, 40))  g.build_now = true;
+                if (ImGui::SliderInt("rotor blades", &g.turb_rotor, 8, 40))    g.build_now = true;
+                if (ImGui::SliderFloat("rotor speed (rpm)", &g.rotor_rpm, 0.0f, 12000.0f, "%.0f")) g.build_now = true;
+                break;
+            case 11:  // steam engine
+                if (ImGui::SliderInt("crank angle (deg)", &g.steam_angle, 0, 360))      g.build_now = true;
+                if (ImGui::SliderFloat("crank radius (m)", &g.crank_r, 0.04f, 0.25f, "%.3f")) g.build_now = true;
+                if (ImGui::SliderFloat("conrod length (m)", &g.conrod_l, 0.2f, 0.9f, "%.3f"))  g.build_now = true;
+                if (ImGui::SliderFloat("piston rod length (m)", &g.piston_rod_l, 0.6f, 1.8f, "%.3f")) g.build_now = true;
+                break;
+            case 12:  // mechanisms
+                if (ImGui::SliderFloat("drive angle (rad)", &g.mech_state, 0.0f, 6.2831853f)) g.build_now = true;
+                if (ImGui::SliderFloat("gear ratio", &g.gear_ratio, -2.0f, 2.0f, "%.2f"))     g.build_now = true;
+                break;
+            case 13:  // import / export
+                if (ImGui::SliderFloat("casing size", &g.ie_box, 1.0f, 3.0f, "%.2f"))     g.build_now = true;
+                if (ImGui::SliderFloat("rotor length", &g.ie_rotor_len, 1.0f, 4.0f, "%.2f")) g.build_now = true;
+                break;
+            case 14:  // gizmos
+                if (ImGui::SliderFloat("gizmo scale", &g.gizmo_scale, 0.5f, 2.5f, "%.2f")) g.build_now = true;
+                break;
             }
         },
         true);
@@ -730,16 +861,33 @@ int main(int argc, char** argv)
         for (int i = 0; i < win_events.num_events; ++i)
             imgui.process_event(win_events.events[i]);
 
-        const bool want_kb = imgui.want_capture_keyboard();
         if (window.was_key_released(SDL_SCANCODE_ESCAPE))
             window.close();
+
+        // Z toggles Orbit <-> FPS camera. exd::app's Window already flips
+        // window.input_mode on Z key-down (hard-coded app-level toggle, shared
+        // across repos), so here we only sync the camera mode to that flip and
+        // restore the tab's orbit framing when leaving FPS.
+        if (window.was_key_released(SDL_SCANCODE_Z))
+        {
+            auto& ctl = reg.get<render::CameraModeController>(g.cam_entity);
+            const bool now_fps = (window.input_mode == app::InputMode::FPS);
+            ctl.mode = now_fps ? render::CameraMode::Fps : render::CameraMode::Orbit;
+            if (!now_fps)
+                frame_camera(g, reg, kTabs[g.current_tab]);   // re-frame on exit
+        }
+
+        // Tab / Shift+Tab cycle through the demos (wrap around).
         if (window.was_key_released(SDL_SCANCODE_TAB))
         {
-            window.input_mode = (window.input_mode == app::InputMode::FPS)
-                                ? app::InputMode::UI : app::InputMode::FPS;
-            window.set_input_mode(window.input_mode);
+            const bool shift = (window.keyboard_state != nullptr) &&
+                               (window.keyboard_state[SDL_SCANCODE_LSHIFT] ||
+                                window.keyboard_state[SDL_SCANCODE_RSHIFT]);
+            g.current_tab = shift
+                ? (g.current_tab + kTabCount - 1) % kTabCount
+                : (g.current_tab + 1) % kTabCount;
+            g.build_now = true;
         }
-        (void)want_kb;
 
         // keep orbit from fighting the ImGui window
         if (reg.valid(g.cam_entity))
@@ -754,7 +902,10 @@ int main(int argc, char** argv)
             clear_scene(g, reg, ctx);
             build_tab(g, reg, ctx);
             infoBuf = g.info;
-            frame_camera(g, reg, kTabs[g.current_tab]);
+            // Frame the tab's default orbit view unless the user is actively
+            // flying in FPS mode (Z), which we keep across tab changes.
+            if (reg.get<render::CameraModeController>(g.cam_entity).mode != render::CameraMode::Fps)
+                frame_camera(g, reg, kTabs[g.current_tab]);
             g.build_now = false;
             if (g.last_printed_tab != g.current_tab)
             {
